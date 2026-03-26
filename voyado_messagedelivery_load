@@ -1,0 +1,51 @@
+let Client = require('ssh2-sftp-client');
+let sftp = new Client();
+const {
+    Storage
+} = require('@google-cloud/storage');
+const storage = new Storage();
+const myBucket = storage.bucket('ideal_data_bucket');
+const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
+
+exports.voyado_messagedelivery_load = async (req, res) => {
+    const client = new SecretManagerServiceClient();
+    const [version] = await client.accessSecretVersion({
+        name: 'projects/160110390064/secrets/voyado_sftp/versions/latest',
+    });
+
+    await sftp.connect({
+        host: "ftp.voyado.com",
+        port: "22",
+        user: "idealofsweden.production",
+        password: version.payload.data.toString()
+    }).then(() => {
+        // will return an array of objects with information about all files in the remote folder
+        return sftp.list('/export/messageDelivery_v1/');
+    }).then(async (data) => {
+        // data is the array of objects
+        len = data.length;
+        console.log("len "+len);
+        // x is one element of the array
+      for (const x of data) {
+      //  await data.forEach(x => {
+            let remoteFilePath = '/export/messageDelivery_v1/' + x.name;
+            await sftp.get(remoteFilePath).then((stream) => {
+                // save to local folder ftp
+                console.log("remoteFilePath " + remoteFilePath);
+                const file = myBucket.file('voyado/messageDelivery_v1/' + x.name);
+                file.save(stream, {autoRetry: true, resumable: false}).then(() => {
+                    console.log(x.name + ' done');
+                    sftp.delete(remoteFilePath).then(() => {
+                        console.log(x.name + ' deleted');
+                    });
+                });
+            });
+       }
+      //  });
+ 
+    }).catch((err) => {
+        console.log(err, 'catch error');
+    });
+    let message = req.query.message || req.body.message || 'Files imported from Voyado FTP successfully!';
+    res.status(200).send(message);
+};
