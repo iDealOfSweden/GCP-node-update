@@ -1,0 +1,161 @@
+/**
+ * Responds to any HTTP request.
+ *
+ * @param {!express:Request} req HTTP request context.
+ * @param {!express:Response} res HTTP response context.
+ */
+exports.voyado_member_bigquery = async(req, res) => {
+
+  await readFiles('member','Member_v1');
+
+
+  let message = req.query.message || req.body.message || 'Voyado loaded to BigQuery';
+  res.status(200).send(message);
+};
+
+// Import the Google Cloud client libraries
+const {BigQuery} = require('@google-cloud/bigquery');
+const {Storage} = require('@google-cloud/storage');
+
+// Instantiate clients
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+});
+const storage = new Storage();
+var numbers = 0;
+/**
+ * This sample loads the JSON file at
+ * https://storage.googleapis.com/cloud-samples-data/bigquery/us-states/us-states.json
+ *
+ * TODO(developer): Replace the following lines with the path to your file.
+ */
+const bucketName = 'ideal_data_bucket';
+
+
+async function readFiles (tablename, folder) {
+   const filename = '/voyado/'+folder+'/*.csv';
+  const [files] = await storage.bucket(bucketName).getFiles({ prefix: 'voyado/'+folder+'/'});
+console.log(files.length);
+  console.log('Files:');
+ // await files.forEach(file => {
+   // console.log(file.name);
+   // loadJSONFromGCSTruncate(file.name);
+ // });
+ for (var file of files) {
+   await loadJSONFromGCSTruncate(file.name, tablename);
+  }
+
+};
+
+async function loadJSONFromGCSTruncate(filename, tablename) {
+  /**
+   * Imports a GCS file into a table and overwrites
+   * table data if table already exists.
+   */
+
+  /**
+   * TODO(developer): Uncomment the following lines before running the sample.
+   */
+  console.log(filename);
+   const datasetId = "voyado";
+   const tableId = tablename.toLowerCase();
+
+  // Configure the load job. For full list of options, see:
+  // https://cloud.google.com/bigquery/docs/reference/rest/v2/Job#JobConfigurationLoad
+  const metadata = {
+    sourceFormat: 'CSV',
+    fieldDelimiter: ';',
+    allowLargeResults: true,
+    //ignoreUnknownValues: true,
+    allowJaggedRows: true,
+    allowQuotedNewlines: true,
+    //encoding: 'ISO-8859-1',
+    autodetect: false,
+    skip_leading_rows: 1,
+    // Set the write disposition to overwrite existing table data.
+   // writeDisposition: 'WRITE_APPEND',
+    schema: {
+      fields: [
+ {name: 'id', type: 'STRING'},
+ {name: 'isDeleted', type: 'BOOLEAN'},
+ {name: 'firstName', type: 'STRING'},
+ {name: 'lastName', type: 'STRING'},
+ {name: 'street', type: 'STRING'},
+ {name: 'zipCode', type: 'STRING'},
+ {name: 'city', type: 'STRING'},
+ {name: 'email', type: 'STRING'},
+ {name: 'mobilePhone', type: 'STRING'},
+ {name: 'countryCode', type: 'STRING'},
+ {name: 'socialSecurityNumber', type: 'STRING'},
+ {name: 'gender', type: 'STRING'},
+ {name: 'age', type: 'STRING'},
+ {name: 'createdInStore', type: 'STRING'},
+ {name: 'store', type: 'STRING'},
+ {name: 'careOf', type: 'STRING'},
+ {name: 'birthDay', type: 'STRING'},
+ {name: 'memberNumber', type: 'INTEGER'},
+ {name: 'tbGoals', type: 'STRING'},
+ {name: 'tbName', type: 'STRING'},
+ {name: 'tbOrg', type: 'STRING'},
+ {name: 'tbRating', type: 'INTEGER'},
+ {name: 'tbRatingm', type: 'INTEGER'},
+ {name: 'tbProfln1', type: 'STRING'},
+ {name: 'tbProflv1', type: 'INTEGER'},
+ {name: 'tbProfln2', type: 'STRING'},
+ {name: 'tbProflv2', type: 'INTEGER'},
+ {name: 'tbProfln3', type: 'STRING'},
+ {name: 'tbProflv3', type: 'INTEGER'},
+ {name: 'tbFirstSeen', type: 'STRING'},
+ {name: 'tbLastSeen', type: 'STRING'},
+ {name: 'consent', type: 'BOOLEAN'},
+ {name: 'latestOrder', type: 'TIMESTAMP'},
+ {name: 'personalCode', type: 'STRING'}, //------------------------------
+ {name: 'statusEmail', type: 'STRING'},
+ {name: 'statusPostal', type: 'STRING'},
+ {name: 'statusSms', type: 'STRING'},
+ {name: 'retail_keyvalue_numberofarticlepurchasestotal', type: 'STRING'},
+ {name: 'retail_keyvalue_averagereceipttotal', type: 'INTEGER'},
+ {name: 'retail_keyvalue_purchaseamounttotal', type: 'INTEGER'},
+ {name: 'retail_keyvalue_purchasefrequencytotal', type: 'INTEGER'},
+ {name: 'retail_keyvalue_numberofarticlepurchaseslast12months', type: 'FLOAT'},
+ {name: 'retail_keyvalue_averagereceiptlast12months', type: 'INTEGER'},
+ {name: 'retail_keyvalue_purchaseamountlast12months', type: 'INTEGER'},
+ {name: 'retail_keyvalue_purchasefrequencylast12months', type: 'INTEGER'},
+ {name: 'retail_keyvalue_numberofarticlepurchaseslast24months', type: 'FLOAT'},
+ {name: 'retail_keyvalue_averagereceiptlast24months', type: 'INTEGER'},
+ {name: 'retail_keyvalue_purchaseamountlast24months', type: 'INTEGER'},
+ {name: 'retail_keyvalue_purchasefrequencylast24months', type: 'INTEGER'},
+ {name: 'retail_keyvalue_latestreceiptdate', type: 'TIMESTAMP'},
+ {name: 'registrationDate', type: 'TIMESTAMP'},
+ {name: 'lastModifiedTime', type: 'TIMESTAMP'},
+ {name: 'contactPreferencesAcceptsEmail', type: 'BOOLEAN'},
+ {name: 'contactPreferencesAcceptsSms', type: 'BOOLEAN'},
+ {name: 'contactPreferencesAcceptsPostal', type: 'BOOLEAN'},
+ {name: 'isApproved', type: 'BOOLEAN'},
+ {name: 'optionalTrailing', type: 'STRING'}
+       ],
+    },
+    // Set the write disposition to overwrite existing table data.
+
+   writeDisposition: 'WRITE_APPEND'
+  };
+
+  // Load data from a Google Cloud Storage file into the table
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  // load() waits for the job to finish
+  console.log(`Job ${job.id} completed.`);
+  console.log("rows" + JSON.stringify(job.statistics.load.outputRows));
+  // Check the job's status for errors
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    throw errors;
+  }else{
+  numbers++;
+      storage.bucket(bucketName).deleteFiles({ prefix: filename }, function(err) { if (!err) {}});
+  console.log(numbers + " done");
+
+  }
+}
