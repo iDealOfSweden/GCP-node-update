@@ -1,0 +1,136 @@
+/**
+ * Responds to any HTTP request.
+ *
+ * @param {!express:Request} req HTTP request context.
+ * @param {!express:Response} res HTTP response context.
+ */
+exports.voyado_receiptitems_bigquery = async(req, res) => {
+
+  await readFiles('receiptItems','receiptItems_v1');
+
+
+  let message = req.query.message || req.body.message || 'Voyado loaded to BigQuery';
+  res.status(200).send(message);
+};
+
+// Import the Google Cloud client libraries
+const {BigQuery} = require('@google-cloud/bigquery');
+const {Storage} = require('@google-cloud/storage');
+
+// Instantiate clients
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+});
+const storage = new Storage();
+var numbers = 0;
+/**
+ * This sample loads the JSON file at
+ * https://storage.googleapis.com/cloud-samples-data/bigquery/us-states/us-states.json
+ *
+ * TODO(developer): Replace the following lines with the path to your file.
+ */
+const bucketName = 'ideal_data_bucket';
+
+
+async function readFiles (tablename, folder) {
+   const filename = '/voyado/'+folder+'/*.csv';
+  const [files] = await storage.bucket(bucketName).getFiles({ prefix: 'voyado/'+folder+'/'});
+console.log(files.length);
+  console.log('Files:');
+ // await files.forEach(file => {
+   // console.log(file.name);
+   // loadJSONFromGCSTruncate(file.name);
+ // });
+ for (const file of files) {
+   await loadJSONFromGCSTruncate(file.name, tablename);
+  }
+
+};
+
+async function loadJSONFromGCSTruncate(filename, tablename) {
+  /**
+   * Imports a GCS file into a table and overwrites
+   * table data if table already exists.
+   */
+
+  /**
+   * TODO(developer): Uncomment the following lines before running the sample.
+   */
+  console.log(filename);
+   const datasetId = "voyado";
+   const tableId = tablename.toLowerCase();
+
+  // Configure the load job. For full list of options, see:
+  // https://cloud.google.com/bigquery/docs/reference/rest/v2/Job#JobConfigurationLoad
+  const metadata = {
+    sourceFormat: 'CSV',
+    fieldDelimiter: ';',
+    //allowLargeResults: true,
+    autodetect: false,
+    skip_leading_rows: 1, 
+    // Set the write disposition to overwrite existing table data.
+   // writeDisposition: 'WRITE_APPEND',
+      schema: {
+      fields: [
+ {name: 'receiptItemId', type: 'STRING'},
+ {name: 'receiptId', type: 'STRING'},
+ {name: 'contactId', type: 'STRING'},
+ {name: 'storeId', type: 'STRING'},
+ {name: 'transactionDateTime', type: 'TIMESTAMP'},
+ {name: 'type', type: 'STRING'},
+ {name: 'sku', type: 'STRING'},
+ {name: 'articleNumber', type: 'STRING'},
+ {name: 'quantity', type: 'INTEGER'},
+ {name: 'grossPaidPrice', type: 'FLOAT'},
+ {name: 'grossPaidPricePerUnit', type: 'FLOAT'},
+ {name: 'localPrice', type: 'FLOAT'},
+ {name: 'localCurrency', type: 'STRING'},
+ {name: 'discounts', type: 'FLOAT'},
+ {name: 'discountPercent', type: 'FLOAT'},
+ {name: 'marginPercent', type: 'STRING'},
+ {name: 'taxPercent', type: 'FLOAT'},
+ {name: 'articleName', type: 'STRING'},
+ {name: 'articleGroup', type: 'STRING'},
+ {name: 'articleSpare1', type: 'STRING'},
+ {name: 'articleSpare2', type: 'STRING'},
+ {name: 'articleSpare3', type: 'STRING'},
+ {name: 'articleSpare4', type: 'STRING'},
+ {name: 'articleSpare5', type: 'STRING'},
+ {name: 'articleSpare6', type: 'STRING'},
+ {name: 'articleSpare7', type: 'STRING'},
+ {name: 'articleSpare8', type: 'STRING'},
+ {name: 'articleSpare9', type: 'STRING'},
+ {name: 'articleSpare10', type: 'STRING'},
+ {name: 'articleDateSpare1', type: 'STRING'},
+ {name: 'articleDateSpare2', type: 'STRING'},
+ {name: 'articleDateSpare3', type: 'STRING'},
+ {name: 'articleDateSpare4', type: 'STRING'},
+ {name: 'articleDateSpare5', type: 'STRING'},
+ {name: 'awardBonus', type: 'STRING'},
+ {name: 'changeType', type: 'STRING'},
+ {name: 'notUsed', type: 'TIMESTAMP'}
+       ],
+    },
+   writeDisposition: 'WRITE_APPEND',
+  };
+
+  // Load data from a Google Cloud Storage file into the table
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  // load() waits for the job to finish
+  console.log(`Job ${job.id} completed.`);
+  console.log("rows" + JSON.stringify(job.statistics.load.outputRows));
+
+  // Check the job's status for errors
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    throw errors;
+  }else{
+  numbers++;
+      storage.bucket(bucketName).deleteFiles({ prefix: filename }, function(err) { if (!err) {}});
+  console.log(numbers + " done");
+
+  }
+}
