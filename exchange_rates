@@ -1,0 +1,133 @@
+const datasetId = "financial";
+const tableId = "riksbanken_rates";
+const {BigQuery} = require('@google-cloud/bigquery');
+const {Storage} = require('@google-cloud/storage');
+
+const Firestore = require('@google-cloud/firestore');
+const PROJECTID = 'influencer-reporting-bi';
+const COLLECTION_NAME = 'import';
+const firestore = new Firestore({
+  projectId: PROJECTID,
+  timestampsInSnapshots: true,
+});
+const fs = new Firestore({
+  projectId: "ideal-data-warehouse",
+  timestampsInSnapshots: true,
+});
+let docRef = fs.doc('/import/riksbanken');
+let documentRef = firestore.doc('/import/riksbanken');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+const storage = new Storage();
+
+const bucketName = 'ideal_data_bucket';
+const filename = '/riksbanken/rates.txt';
+const myBucket = storage.bucket(bucketName);
+const file = myBucket.file(filename);
+
+const xml2js = require('xml2js');
+var parser = new xml2js.Parser();
+var axios = require('axios');
+
+exports.getInterestAndExchangeRates = async (req, res) => {
+  var d = new Date().toISOString().slice(0,10);
+  // console.log("d: ", d)
+  var data = await soapGet(d)
+  // console.log("data: ", data)
+  if (data) {
+    await saveFile(data);
+    await loadJSONFromGCSTruncate();
+    res.status(200).send("klar");
+  } else {
+    res.status(404).send("Databse empty");
+  }
+};
+function soapGet(date) {
+  return new Promise((resolve, reject) => {
+    var da = "<soap:Envelope xmlns:soap=\'http://www.w3.org/2003/05/soap-envelope\' xmlns:xsd=\'http://swea.riksbank.se/xsd\'><soap:Header/><soap:Body><xsd:getInterestAndExchangeRates><searchRequestParameters><aggregateMethod>D</aggregateMethod><datefrom>" + date + "</datefrom><dateto>" + date + "</dateto><languageid>sv</languageid><min>false</min><avg>true</avg><max>false</max><ultimo>false</ultimo><searchGroupSeries><groupid>130</groupid><seriesid>SEKATSPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKAUDPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKBEFPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKBRLPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKCADPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKCHFPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKCNYPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKCYPPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKCZKPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKDEMPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKDKKPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKEEKPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKESPPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKEURPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKFIMPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKFRFPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKGBPPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKGRDPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKHKDPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKHUFPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKIDRPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKIEPPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKINRPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKISKPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKITLPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKJPYPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKKRWPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKKWDPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKLTLPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKLVLPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKMADPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKMXNPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKMYRPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKNLGPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKNOKPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKNZDPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKPLNPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKPTEPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKRUBPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKSARPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKSGDPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKSITPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKSKKPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKTHBPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKTRLPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKTRYPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKUSDPMI</seriesid></searchGroupSeries><searchGroupSeries><groupid>130</groupid><seriesid>SEKZARPMI</seriesid></searchGroupSeries></searchRequestParameters></xsd:getInterestAndExchangeRates></soap:Body></soap:Envelope>";
+
+    var config = {
+      method: 'post',
+      // url: 'http://swea.riksbank.se:80/sweaWS/services/SweaWebServiceHttpSoap12Endpoint',
+      url: 'http://swea.riksbank.se/sweaWS/services/SweaWebServiceHttpSoap12Endpoint',
+            
+      headers: { 
+        'Content-Type': 'application/soap+xml;charset=UTF-8;action=urn:getInterestAndExchangeRates', 
+        'Host': 'swea.riksbank.se:80', 
+        'Accept-Encoding': 'gzip, deflate, br', 
+        'Proxy-Connection': 'Keep-Alive'
+      },
+      data : da
+    };
+
+    axios(config)
+    .then(function (response) {
+      parser.parseString(response.data, function (err, result) {
+          var base = result["SOAP-ENV:Envelope"]["SOAP-ENV:Body"][0]["ns0:getInterestAndExchangeRatesResponse"][0]["return"][0]["groups"][0]["series"]
+          var njson = "";
+          for (var i = 0; i < base.length; i++) {
+            if (base[i].resultrows[0].value[0]["_"] == null) {
+              continue;
+            }
+            
+            let tempData = {
+              "currency": base[i].seriesname[0]["_"].slice(base[i].seriesname[0]["_"].indexOf(" ")+1),
+              "rate": Number(base[i].resultrows[0].value[0]["_"]) / Number(base[i].unit[0]["_"]),
+              "date": new Date().toISOString()
+            }
+            documentRef.update({[tempData.currency]: tempData.rate});
+            docRef.update({[tempData.currency]: tempData.rate});
+            njson += JSON.stringify(tempData) + "\n"
+          }
+          resolve(njson)
+      });
+    })
+    .catch(function (error) {
+      console.log(error);
+      reject(error);
+    });
+  });
+}
+async function loadJSONFromGCSTruncate() {
+  const metadata = {
+    sourceFormat: 'NEWLINE_DELIMITED_JSON',
+    schema: {
+      fields: [
+        {name: 'currency', type: 'STRING'},
+        {name: 'rate', type: 'FLOAT'},
+        {name: 'date', type: 'TIMESTAMP'}          
+       ],
+    },
+   writeDisposition: 'WRITE_APPEND',
+  };
+
+  // Load data from a Google Cloud Storage file into the table
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  // load() waits for the job to finish
+  console.log(`Job ${job.id} completed.`);
+
+  // Check the job's status for errors
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    throw errors;
+  }else{
+  console.log("done");
+  }
+}
+function saveFile(sar) {
+  return new Promise((resolve, reject) => {
+    file.save(sar, function(err) {
+        if (!err) {
+          resolve();
+        } else {
+            console.error(erro)
+            reject();
+          }
+      });
+  });
+}
