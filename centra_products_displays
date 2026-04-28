@@ -1,0 +1,163 @@
+const datasetId = "centra";
+const tableId = "products_displays_root";
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const myBucket = storage.bucket('ideal_data_bucket');
+const bucketName = 'ideal_data_bucket';
+const filename = '/centra/products_displays.txt';
+const file = myBucket.file(filename);
+
+const https = require('https');
+
+exports.display = async (event, context, callback) => {
+    var pages = 1;
+  var ndjson = "";
+  var total = 0;
+  while (pages) {
+    var resu = await callHttp(pages);
+    if (resu.long > 1) {
+      total += resu.long;
+      ndjson += resu.data;
+      pages++;
+    } else {
+      pages = false;
+    }
+  }
+  console.log("Fetched",total,"items");
+  await saveFile(ndjson);
+  console.log("Saved file");
+  await load();
+  callback(null, 'Loaded products_displays'); 
+};
+
+function saveFile(data) {
+  return new Promise((resolve, reject) => {
+    file.save(data, function(err) {
+        if (!err) {
+          resolve();
+        } else {
+            console.error(err);
+            reject();
+          }
+      });
+  });
+}
+function callHttp(page){
+  return new Promise((resolve, reject) => {
+  try {
+          const options = {
+   		    host: 'ideal.centra.com',
+      	  path: '/graphql',
+          method: 'POST',
+          headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer 80ca84a8c4e525eded695d07b4e0a75c'
+            }
+          };
+
+          var req = https.request(options, function (res) {
+          var chunks = [];
+
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+
+          res.on("end", function (chunk) {
+            if (res.statusCode >= 300) {
+              new Error(Buffer.concat(chunks).toString())
+              reject();
+            } else {
+              var local = JSON.parse(Buffer.concat(chunks).toString());
+              var txt = "";
+              for (var i = 0; i < local.data.displays.length; i++) {
+                let preEn = {
+                  "sku": local.data.displays[i].product.productNumber,
+                  "id": local.data.displays[i].id,
+                  "displayItemId": null,
+                  "status": local.data.displays[i].status,
+                  "name": local.data.displays[i].name,
+                  "uri": local.data.displays[i].uri,
+                  "store": "",
+                  "updatedAt": new Date(local.data.displays[i].updatedAt),
+                  "comment": local.data.displays[i].comment,
+                  "markets": [],
+                  "canonicalCategory": null,
+                  "categories": []
+                }
+                for (var m = 0; m < local.data.displays[i].markets.length; m++) {
+                  preEn.markets.push(local.data.displays[i].markets[m].id)
+                }
+                for (var c = 0; c < local.data.displays[i].categories.length; c++) {
+                  preEn.categories.push(local.data.displays[i].categories[c].id)
+                }
+                if (local.data.displays[i].canonicalCategory != null) preEn.canonicalCategory = local.data.displays[i].canonicalCategory.name;
+                if (local.data.displays[i].store.id == 1) preEn.store = "B2C"
+                else preEn.store = "B2B"
+                if (local.data.displays[i].displayItems.length>0) preEn.displayItemId = local.data.displays[i].displayItems[0].id;
+                txt += JSON.stringify(preEn) + "\n";
+              }
+              resolve({"data":txt,"long":local.data.displays.length});
+            }
+          });
+          res.on("error", function (error) {
+            console.log(error);
+          });
+        });
+        req.write('{"query": "query{displays(limit:200,page:'+page+'){id product{productNumber}name status uri comment updatedAt canonicalCategory{name} categories{id} markets{id} store{id} displayItems{id}}}"}');
+
+        req.end();
+  } catch (e) {
+    console.log("faila",e);
+    reject();
+  }
+  });
+}
+async function load() {
+  const metadata = {
+    sourceFormat: 'NEWLINE_DELIMITED_JSON',
+    ignoreUnknownValues: true,
+    schema: {
+      fields: [
+       {name: 'id', type: 'INTEGER'},
+       {name: 'sku', type: 'STRING'},
+       {name: 'name', type: 'STRING'},
+       {name: 'status', type: 'STRING'},
+       {name: 'displayItemId', type: 'INTEGER'},
+       {name: 'uri', type: 'STRING'},
+       {name: 'store', type: 'STRING'},
+       {name: 'comment', type: 'STRING'},
+       {name: 'canonicalCategory', type: 'STRING'},
+       {name: 'updatedAt', type: 'TIMESTAMP'},
+       {
+         name: 'markets',
+         type: 'INTEGER',
+         mode: 'REPEATED'
+       },
+       {
+         name: 'categories',
+         type: 'INTEGER',
+         mode: 'REPEATED'
+       }
+      ]
+    },
+    writeDisposition: 'WRITE_TRUNCATE',
+  };
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  console.log(`Job ${job.id} completed.`);
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    console.error(errors);
+    throw errors;
+  }else{
+    storage.bucket(bucketName).deleteFiles({ prefix: filename }, function(err) { if (!err) { return 'products_displays loaded to BigQuery!';}});
+  }
+}
