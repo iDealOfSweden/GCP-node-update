@@ -1,0 +1,41 @@
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+const converter = require('json-2-csv');
+const myBucket = storage.bucket('ideal_data_bucket');
+const file = myBucket.file('/centra/dispimgs.csv');
+const config = {
+  action: 'read',
+  expires: '03-17-2025'
+};
+
+exports.dispimgs = async (req, res) => {
+    var query = "SELECT t2.id, t0.sku, IFNULL(t2.brand,'') AS brand, IFNULL(t2.name,'') AS product_name, IFNULL(t2.folder,'') AS folder, IFNULL(t2.collection,'') AS collection, IFNULL(t0.name,'') AS display_name, IFNULL(CAST(t0.displayitemid AS STRING),'') AS displayitemid, t0.id AS display_id, IFNULL(t0.uri,'') AS uri, IFNULL(CONCAT('/p/',t0.uri),'') AS store_path, IFNULL(t1.url,'') AS image FROM `ideal-data-warehouse.centra.products_displays_root` t0 LEFT JOIN `ideal-data-warehouse.centra.products_displays_media` t1 ON t1.displayid = CAST(t0.id AS STRING) AND t1.primary LEFT JOIN `ideal-data-warehouse.centra.products_root` t2 ON t0.sku = t2.sku WHERE t0.store = 'B2C' AND t0.status = 'ACTIVE' AND t2.status = 'ACTIVE'";
+    var options = {
+      query: query,
+      location: 'EU',
+    };
+    var [job] = await bigquery.createQueryJob(options);
+    var [rows] = await job.getQueryResults();
+    converter.json2csv(rows, (err, csv) => {
+    if (err) res.status(400).send(err);
+    file.save(csv, function(erro) {
+        if (!err) {
+          file.getSignedUrl(config, function(err, url) {
+            if (err) {
+              console.error(err);
+              res.status(400).send(err)
+            } else {
+            res.status(200).redirect(url);
+            }
+          });
+        } else {
+          res.status(400).send(erro)
+        }
+    });
+  }) 
+};
