@@ -1,0 +1,142 @@
+const datasetId = "centra";
+const tableId = "products_displays_media";
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const myBucket = storage.bucket('ideal_data_bucket');
+const bucketName = 'ideal_data_bucket';
+const filename = '/centra/products_displays_media.txt';
+const file = myBucket.file(filename);
+
+const https = require('https');
+
+exports.media = async (event, context, callback) => {
+  var pages = 1;
+  var ndjson = "";
+  var total = 0;
+  while (pages) {
+    var resu = await callHttp(pages);
+    if (resu.long > 1) {
+      total += resu.long;
+      ndjson += resu.data;
+      pages++;
+    } else {
+      pages = false;
+    }
+  }
+  console.log("Fetched",total,"items");
+  await saveFile(ndjson);
+  console.log("Saved file");
+  await load();
+  callback(null, 'Success!');    // Success
+  
+};
+
+function saveFile(data) {
+  return new Promise((resolve, reject) => {
+    file.save(data,{
+                    autoRetry: true, // <<-- required to enable retries for multipart.
+                    resumable: false, // means, use multipart upload instead of resumable upload.
+                    }, function(err) {
+        if (!err) {
+          resolve();
+        } else {
+            console.log(err)
+            reject();
+          }
+      });
+  });
+}
+function callHttp(page){
+  return new Promise((resolve, reject) => {
+  try {
+          const options = {
+   		    host: 'ideal.centra.com',
+      	  path: '/graphql',
+          method: 'POST',
+          headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer 80ca84a8c4e525eded695d07b4e0a75c'
+            }
+          };
+
+          var req = https.request(options, function (res) {
+          var chunks = [];
+
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+
+          res.on("end", function (chunk) {
+            if (res.statusCode >= 300) {
+              new Error(Buffer.concat(chunks).toString())
+              reject();
+            } else {
+              var local = JSON.parse(Buffer.concat(chunks).toString());
+              var txt = "";
+              for (var i = 0; i < local.data.displays.length; i++) {
+                if (local.data.displays[i].media.length > 0) {
+                  for (var m = 0; m < local.data.displays[i].media.length; m++) {
+                    let preEn = {
+                      "sku": local.data.displays[i].product.productNumber,
+                      "displayid": local.data.displays[i].id.toString(),
+                      "displayitemid": "",
+                      "primary": false,
+                      "url": local.data.displays[i].media[m].source.url
+                    }
+                    if (m == 0) preEn.primary = true;
+                    if (local.data.displays[i].displayItems.length > 0) preEn.displayitemid = local.data.displays[i].displayItems[0].id.toString()
+                    txt += JSON.stringify(preEn) + "\n";
+                  }
+
+                }
+              }
+              resolve({"data":txt,"long":local.data.displays.length});
+            }
+          });
+          res.on("error", function (error) {
+            console.log(error);
+          });
+        });
+        req.write('{"query": "query{displays(where:{storeId:1},limit:200,page:'+ page +'){id product{productNumber}displayItems{id}media{source{url}}}}"}');
+
+        req.end();
+  } catch (e) {
+    console.log("faila",e);
+    reject();
+  }
+  });
+}
+async function load() {
+  const metadata = {
+    sourceFormat: 'NEWLINE_DELIMITED_JSON',
+    ignoreUnknownValues: true,
+    schema: {
+      fields: [
+       {name: 'sku', type: 'STRING'},
+       {name: 'displayid', type: 'STRING'},
+       {name: 'displayitemid', type: 'STRING'},
+       {name: 'primary', type: 'BOOLEAN'},
+       {name: 'url', type: 'STRING'}
+      ],
+    },
+    writeDisposition: 'WRITE_TRUNCATE',
+  };
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  console.log(`Job ${job.id} completed.`);
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    console.error(errors);
+    throw errors;
+  }else{
+    storage.bucket(bucketName).deleteFiles({ prefix: filename }, function(err) { if (!err) { return 'local loaded to BigQuery!';}});
+  }
+}
