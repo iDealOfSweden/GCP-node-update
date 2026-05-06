@@ -1,0 +1,283 @@
+const datasetId = "centra";
+const tableId = "products_root";
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const myBucket = storage.bucket('ideal_data_bucket');
+const bucketName = 'ideal_data_bucket';
+const filename = '/centra/products_root.txt';
+const file = myBucket.file(filename);
+
+const https = require('https');
+
+exports.root = async (event, context, callback) => {
+    var pages = 1;
+  var ndjson = "";
+  var total = 0;
+  while (pages) {
+    var resu = await callHttp(pages);
+    if (resu.long > 1) {
+      total += resu.long;
+      ndjson += resu.data;
+      pages++;
+    } else {
+      pages = false;
+    }
+  }
+  console.log("Fetched",total,"items");
+  await saveFile(ndjson);
+  console.log("Saved file");
+  await load();
+  callback(null, 'Loaded products_root');
+};
+
+function saveFile(data) {
+  return new Promise((resolve, reject) => {
+    file.save(data, function(err) {
+        if (!err) {
+          resolve();
+        } else {
+            console.error(err);
+            reject();
+          }
+      });
+  });
+}
+function callHttp(page){
+  return new Promise((resolve, reject) => {
+  try {
+          const options = {
+   		    host: 'ideal.centra.com',
+      	  path: '/graphql',
+          method: 'POST',
+          headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer 80ca84a8c4e525eded695d07b4e0a75c'
+            }
+          };
+
+          var req = https.request(options, function (res) {
+          var chunks = [];
+
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+
+          res.on("end", function (chunk) {
+            if (res.statusCode >= 300) {
+              new Error(Buffer.concat(chunks).toString())
+              reject();
+            } else {
+              var local = JSON.parse(Buffer.concat(chunks).toString());
+              var txt = "";
+              for (var i = 0; i < local.data.products.length; i++) {
+                let preEn = {
+                  "id": local.data.products[i].id,
+                  "sku": local.data.products[i].productNumber,
+                  "name": local.data.products[i].name,
+                  "status": local.data.products[i].status,
+                  "createdAt": new Date(local.data.products[i].createdAt),
+                  "updatedAt": new Date(local.data.products[i].updatedAt),
+                  "comment": local.data.products[i].comment,
+                  "harmCode": local.data.products[i].harmonizedCommodityCode,
+                  "description": "",
+                  "unitCost": null,
+                  "ean": null,
+                  "weight": null,
+                  "folder": null,
+                  "isBundle": local.data.products[i].isBundle,
+                  "isSerializableProduct": local.data.products[i].isSerializableProduct,
+                  "frontImage": null,
+                  "frontDisplay": null,
+                  "brand": null,
+                  "collection": null,
+                  "countryOfOrigin": null,
+                  "google_merchant_category": null,
+                  "google_merchant_product_type": null,
+                  //"sa_algolia_ranking": null,
+                  "sa_collection": null,
+                  //"sa_color_m": null,
+                  "sa_color_w": null,
+                  "sa_new_product": null,
+                  "sa_hidden": null,
+                  //"sa_badges": null,
+                  "sa_size": null,
+                  "sa_badges": null,
+                  "sa_stock": null,
+                  "shipping_alternative": null,
+                  //"sa_sold_out": null,
+                  //"sa_crm_product_class": null,
+                  "sa_family": null,
+                  "sa_gender": null,
+                  "sa_klarna_onsite_msg": null,
+                  "sa_manufacturer": null,
+                  //"sa_material": null,
+                  "sa_model": null,
+                  "sa_multi_sku_ranking": null,
+                  "sa_pattern": null,
+                  //"sa_phone_compatibility": null,
+                  "sa_product_group": null,
+                  "sa_promotion_video": null,
+                  //"sa_ranking": null,
+                  "sa_retail_packaging": null,
+                  //"sa_show_customer_reviews": null,
+                  "sa_type": null,
+                  "variant_name": null,
+                  "variant_sku": null,
+                  "sa_dynamic_badges": null,
+                  "sa_launch_date": null,
+                  "sa_design_group": null,
+                  "sa_main_color": null,
+                  "sa_accent_color": null,
+                  "sa_usp": null,
+                  "sa_stock_replenish": null,
+                  "sa_reviews_mapping": null,
+                  "sa_hierarchy_product_category": null, //new,
+                  "sa_hierarchy_product_group": null, //new
+                  "sa_hierarchy_product_type": null //new
+                }
+                for (var m = 0; m < local.data.products[i].attributes.length; m++) {
+                  if (typeof preEn[local.data.products[i].attributes[m].type.name] != 'undefined' && typeof local.data.products[i].attributes[m].elements[0] != 'undefined') {
+                    try {
+                      if(local.data.products[i].attributes[m].type.name == "sa_dynamic_badges") {
+                        if(!preEn.sa_dynamic_badges){
+                          preEn.sa_dynamic_badges = local.data.products[i].attributes[m].elements[0].value
+                        } else {
+                          preEn.sa_dynamic_badges += "|" + local.data.products[i].attributes[m].elements[0].value
+                        }
+                      } else {
+                        preEn[local.data.products[i].attributes[m].type.name] = local.data.products[i].attributes[m].elements[0].value
+                      }
+                    } catch (e) {
+                      console.log(e);
+                      console.log(local.data.products[i].attributes[m]);
+                    } 
+                  }
+                }
+                if (local.data.products[i].variants.length > 0) {
+                  preEn.variant_name = local.data.products[i].variants[0].name;
+                  preEn.variant_sku = local.data.products[i].variants[0].variantNumber;
+                  if (local.data.products[i].variants[0].unitCost != null) preEn.unitCost = local.data.products[i].variants[0].unitCost.value;
+                  if (local.data.products[i].variants[0].productSizes.length > 0) {
+                    preEn.ean = local.data.products[i].variants[0].productSizes[0].EAN
+                    if (local.data.products[i].variants[0].productSizes[0].weight != null) preEn.weight = local.data.products[i].variants[0].productSizes[0].weight.value
+                  }
+                }
+                if (local.data.products[i].displays.length >0) {
+                  preEn.description = local.data.products[i].displays[0].description;
+                  preEn.frontDisplay = local.data.products[i].displays[0].id;
+                  if (local.data.products[i].displays[0].media.length >0) {
+                    preEn.frontImage = local.data.products[i].displays[0].media[0].source.url.replace('centra.com','centracdn.net')
+                  }
+                }
+                if (local.data.products[i].countryOfOrigin != null) preEn.countryOfOrigin = local.data.products[i].countryOfOrigin.code;
+                if (local.data.products[i].brand != null) preEn.brand = local.data.products[i].brand.name;
+                if (local.data.products[i].collection != null) preEn.collection = local.data.products[i].collection.name;
+                if (local.data.products[i].folder != null) preEn.folder = local.data.products[i].folder.name;
+                txt += JSON.stringify(preEn) + "\n";
+              }
+              resolve({"data":txt,"long":local.data.products.length});
+            }
+          });
+          res.on("error", function (error) {
+            console.log(error);
+          });
+        });
+        req.write('{"query": "query{products(limit:200,page:'+page+'){id name ...var status productNumber createdAt updatedAt harmonizedCommodityCode internalComment isBundle displays(limit:1){id description media{source{url}}}isSerializableProduct brand{name}collection{name}countryOfOrigin{code}folder{name}attributes{type{name}elements{...afe ...ace ...ase ...aie}}}}fragment ace on AttributeChoiceElement{value:selectedValue}fragment ase on AttributeStringElement{value}fragment aie on AttributeImageElement{value:url}fragment afe on AttributeFileElement{value:url}fragment var on Product{variants(limit:1){name variantNumber unitCost{value}productSizes{EAN weight{value}}}}"}');
+        
+        req.end();
+  } catch (e) {
+    console.log("faila",e);
+    reject();
+  }
+  });
+}
+async function load() {
+  const metadata = {
+    sourceFormat: 'NEWLINE_DELIMITED_JSON',
+    ignoreUnknownValues: true,
+    schema: {
+      fields: [
+       {name: 'id', type: 'INTEGER'},
+       {name: 'sku', type: 'STRING'},
+       {name: 'name', type: 'STRING'},
+       {name: 'status', type: 'STRING'},
+       {name: 'createdAt', type: 'TIMESTAMP'},
+       {name: 'updatedAt', type: 'TIMESTAMP'},
+       {name: 'harmCode', type: 'STRING'},
+       {name: 'folder', type: 'STRING'},
+       {name: 'isBundle', type: 'BOOLEAN'},
+       {name: 'isSerializableProduct', type: 'BOOLEAN'},
+       {name: 'brand', type: 'STRING'},
+       {name: 'unitCost', type: 'FLOAT'},
+       {name: 'ean', type: 'STRING'},
+       {name: 'weight', type: 'FLOAT'},
+       {name: 'collection', type: 'STRING'},
+       {name: 'frontImage', type: 'STRING'},
+       {name: 'frontDisplay', type: 'INTEGER'},
+       {name: 'description', type: 'STRING'},
+       {name: 'countryOfOrigin', type: 'STRING'},
+       {name: 'google_merchant_category', type: 'STRING'},
+       {name: 'google_merchant_product_type', type: 'STRING'},
+       {name: 'sa_algolia_ranking', type: 'STRING'},
+       {name: 'sa_collection', type: 'STRING'},
+       {name: 'sa_color_m', type: 'STRING'},
+       {name: 'sa_color_w', type: 'STRING'},
+       {name: 'sa_crm_product_class', type: 'STRING'},
+       {name: 'sa_family', type: 'STRING'},
+       {name: 'sa_gender', type: 'STRING'},
+       {name: 'sa_new_product', type: 'STRING'},
+       {name: 'sa_hidden', type: 'STRING'},
+       {name: 'sa_badges', type: 'STRING'},
+       {name: 'sa_size', type: 'STRING'},
+       {name: 'sa_stock', type: 'STRING'},
+       {name: 'shipping_alternative', type: 'STRING'},
+       {name: 'sa_sold_out', type: 'STRING'},
+       {name: 'sa_klarna_onsite_msg', type: 'STRING'},
+       {name: 'sa_manufacturer', type: 'STRING'},
+       {name: 'sa_material', type: 'STRING'},
+       {name: 'sa_model', type: 'STRING'},
+       {name: 'sa_multi_sku_ranking', type: 'STRING'},
+       {name: 'sa_pattern', type: 'STRING'},
+       {name: 'sa_phone_compatibility', type: 'STRING'},
+       {name: 'sa_product_group', type: 'STRING'},
+       {name: 'sa_promotion_video', type: 'STRING'},
+       {name: 'sa_ranking', type: 'STRING'},
+       {name: 'sa_retail_packaging', type: 'STRING'},
+       {name: 'sa_show_customer_reviews', type: 'STRING'},
+       {name: 'sa_type', type: 'STRING'},
+       {name: 'variant_name', type: 'STRING'},
+       {name: 'variant_sku', type: 'STRING'},
+       {name: 'sa_dynamic_badges', type: 'STRING'},
+       {name: 'sa_launch_date', type: 'STRING'},
+       {name: 'sa_design_group', type: 'STRING'},
+       {name: 'sa_main_color', type: 'STRING'},
+       {name: 'sa_accent_color', type: 'STRING'},
+       {name: 'sa_usp', type: 'STRING'},
+       {name: 'sa_stock_replenish', type: 'STRING'},
+       {name: 'sa_reviews_mapping', type: 'STRING'},
+       {name: 'sa_hierarchy_product_category', type: 'STRING'}, //NEW
+       {name: 'sa_hierarchy_product_group', type: 'STRING'}, //NEW
+       {name: 'sa_hierarchy_product_type', type: 'STRING'} //NEW
+      ]
+    },
+    writeDisposition: 'WRITE_TRUNCATE',
+  };
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  console.log(`Job ${job.id} completed.`);
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    console.error(errors);
+    throw errors;
+  }else{
+    storage.bucket(bucketName).deleteFiles({ prefix: filename }, function(err) { if (!err) { return 'products_root loaded to BigQuery!';}});
+  }
+}
