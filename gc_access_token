@@ -1,0 +1,73 @@
+const KJUR = require('jsrsasign');
+const https = require('https');
+
+exports.gc_access_token = async(req, res) => {
+  console.log(req.query)
+  if (req.query.key == "aXNvbG9tbmx5c3dlYXJ0aGF0aWFtdXB0b25vZ29vZA==") {
+    var webtoken = await JWT(req.query.mail);
+    var result = await accessToken(webtoken);
+    res.status(200).send(result);
+  }
+  else {
+    res.status(400).send("UNAUTHENTICATED");
+  }
+};
+function accessToken(token){
+    return new Promise((resolve, reject) => {
+      var options = {
+      'method': 'POST',
+      'hostname': 'oauth2.googleapis.com',
+      'path': '/token',
+      'headers': {
+        'Content-Type': 'text/plain'
+      },
+      'maxRedirects': 20
+    };
+
+    var req = https.request(options, function (res) {
+      var chunks = [];
+
+      res.on("data", function (chunk) {
+        chunks.push(chunk);
+      });
+
+      res.on("end", function (chunk) {
+        var body = JSON.parse(Buffer.concat(chunks).toString());
+        resolve(body.access_token);
+      });
+
+      res.on("error", function (error) {
+        console.error(error);
+        reject(error);
+      });
+    });
+    console.log(token)
+    var dt = {
+           'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+           'assertion': token
+        }
+    var postData =  JSON.stringify(dt);
+
+    req.write(postData);
+
+    req.end();
+  });
+}
+function JWT (mail) {
+  var ml = "onelogin@idealofsweden.com"
+  if (typeof mail != 'undefined') ml = mail
+  var pHeader = {"alg":"RS256","typ":"JWT"};
+  var sHeader = JSON.stringify(pHeader);
+  var key = "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDEdr3JN4WLnZPI\nPXdAuYwDYZ3DKcoNgqSAWgzHyZlPoGqJFF+fGMQOIR8xa+l22CqfrUeVIOBkJS+M\naGuf+Dhww2vihYIB0PW9da0TC0/TekahFRYgQSzadB0qZBqrI1HvlpONjsYucfIo\njCJIJ9EO39JWGNM2bdboQ55Zu6nzRIN9THs6sAEt61gdg2x65dlipSY+vwbSoHKJ\njHW6i673cSPh2yEgKU9Oxk0Am2gaDJlLLF+Fsw3BCtMMcxmmEzVbu4saBaM7N2zb\nOswWOR61PpehaPVYUQu8Pas3rRsf1LH5U9nuTDQnJvuhwXKgLQvueU5ZV70AUI9c\n2RYJESdHAgMBAAECggEAVCbGWRNynOBUph8J3wv6+JHN+QQD23CblKy9r6/e/tfn\n+ipjYOrDQ4gVa95cpH6oFzgqIqrv4oV5DevGOcGhL0/NfLwR+UQvlkT66t7cBOnp\nqeK11QAFvdahjYBOWgKpfHXjYu2GXuuIvax0nLKNXhEp7533jmdS967K+4WiIKP1\ncj41pWXgT6g7MbPIY0B8pYV14ZfQDiTMo7sIR4Eo9P5ejncBCz1nwUlybxxu8YAG\nl6k2eefJFAnXzcA34egpwI9hGInttJ2rU5roZLuioVPABVsbgobMjPc8cClbl6D7\nCeS9dFpIUcAWO5NSYMlidmdINS2wcnr7A5I3U/t8GQKBgQD5pXBEAh823hsTi+uB\nvbn0NhHHh2zm5zSm0ACJ3kkajN+BqBO0eocRLbpujRk6uYccfvyJOXkUpn4/6Qe3\nW15/ZczkmoPTCYPPPkWiItX7kdnaAK8ORrVuRSO2W1I/Xkh95wj8o8BcAVbo3cmL\nJRcnjYkov+dXkamNQrgNkmIQGQKBgQDJdstuoWdpsuEJGJczQxNDoUcfRVC24FG/\nauuuaGfWjffTvxjxtDBmCgSB58CXUdbWd/grhOEgNJmSU2uNK7/FeJUhmpi2/xIn\nevLbTDdWU6Vw3zwvnkiV1GoupdlfNKUk1p7ckeVHQ8onpK27CkdSjK/d16dYVJbc\nsEWDI2ReXwKBgQDspDj+DnDeRr2t0qVET780UgiadbHyUtnjAipwhcgQJdc8BUHg\ng4EC9LDTWGbA9tqvVWQ3A8bVn1jvZgqNcUvrQWlujVVGN6+9RI8nORRTqpayApHt\n23Lh+yH2Gyykqs/WoKkxKlwOGqryhEIm5trDAHQyr24w4P+yyrrDCq5wCQJ/aKpP\nBirUjxVf1FnyM6+lUn13dceNJ3VjAw+JYhLb35viJSAi1W/HtTt/G/5LEFJ0SvgI\n9pMSYqjxIBQ2zCDugKkk0VCABpJ93AUEJupx1WefjARuQE77Ztv0TkfbppqzMXBP\nGEiz1VJitDXaDFJKu5hbxeVEC5/mwMDTXE4G1wKBgQCc3GWRIn0lzBWrlYs9uh0n\n9KJSg3VJCtKu3wYrkG7KAS879Lo0Iln4FhsMddnIbNCbdCkLn84oaK4tqXY5SBgI\nLYo1Jbj+GZi/1MlYimswroC3twMANjvQlfBDcberC1gaUHwKi9nr0+gcNtFxa2bn\n0OSnVS9EqIM5+Erx3sanUQ==\n-----END PRIVATE KEY-----\n";`4616`
+  var pClaim = {
+    "aud": "https://oauth2.googleapis.com/token",
+    "scope": "https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/admin.directory.user",
+    "iss": "logicapps@ideal-data-warehouse.iam.gserviceaccount.com",
+    "exp": Math.floor(Date.now()/1000)+3600,
+    "iat": Math.floor(Date.now()/1000),
+    "sub": ml
+    };
+  var sClaim = JSON.stringify(pClaim);
+var sJWS = KJUR.jws.JWS.sign(null, sHeader, sClaim, key);
+return sJWS;
+}
