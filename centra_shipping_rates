@@ -1,0 +1,114 @@
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const myBucket = storage.bucket('ideal_data_bucket');
+const https = require('https');
+const file = myBucket.file('/centra/shippingrates.txt');
+
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery();
+
+const datasetId = "centra";
+const tableId = "shipping_rates";
+
+exports.rates = async (req, res) => {
+  await callHttp();
+  await loadJSONFromGCSTruncate();
+  res.status(200).send('Loaded shipping rates');
+};
+
+
+function callHttp(){
+    return new Promise((resolve, reject) => {
+      const options = {
+          host: 'ideal.centra.com',
+          path: '/graphql',
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer 80ca84a8c4e525eded695d07b4e0a75c'
+          }
+      };
+
+        var req = https.request(options, function (res) {
+        var chunks = [];
+
+        res.on("data", function (chunk) {
+          chunks.push(chunk);
+        });
+
+        res.on("end", function (chunk) {
+          var ship = JSON.parse(Buffer.concat(chunks).toString());
+          var dat = ship.data.shippingOptions
+          var ordersnd = "";
+          for (var i = 0; i < dat.length; i++) {
+            for (var p = 0; p < dat[i].markets.length; p++) {
+              for (var g = 0; g < dat[i].priceGroups.length; g++) {
+                var contries = [];
+                for (let index = 0; index < dat[i].priceGroups[g].countries.length; index++) {
+                  contries.push(dat[i].priceGroups[g].countries[index].code) ;
+                }
+                let preDat = {
+                  "id": dat[i].id,
+                  "name": dat[i].name,
+                  "uri": dat[i].uri,
+                  "marketId": dat[i].markets[p].id,
+                  "market": dat[i].markets[p].name,
+                  "code": dat[i].currency.code,
+                  "value": dat[i].priceGroups[g].ranges[0].shippingPrice.value,
+                  "countries": contries
+                };
+                ordersnd += JSON.stringify(preDat) + "\n";
+              }
+            }
+          }
+          file.save(ordersnd).then(() => resolve());
+        });
+
+        res.on("error", function (error) {
+          console.error(error);
+        });
+      });
+      req.write('{"query": "query{shippingOptions(where: {status : ACTIVE storeType : DIRECT_TO_CONSUMER}){id name uri currency {code} priceGroups{ranges{shippingPrice{value}}countries{code}}markets{id name}}}"}');
+      req.end();
+  });
+}
+async function loadJSONFromGCSTruncate() {
+  const metadata = {
+    sourceFormat: 'NEWLINE_DELIMITED_JSON',
+    schema: {
+      fields: [
+        {name: 'id', type: 'INTEGER'},
+        {name: 'name', type: 'STRING'},
+        {name: 'uri', type: 'STRING'},
+        {name: 'marketId', type: 'INTEGER'},
+        {name: 'market', type: 'STRING'},
+        {name: 'code', type: 'STRING'},
+        {name: 'value', type: 'FLOAT'},
+        {
+         name: 'countries',
+         type: 'STRING',
+         mode: 'REPEATED'
+       }
+      ],
+    },
+    writeDisposition: 'WRITE_TRUNCATE',
+    ignoreUnknownValues: true,
+  };
+
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(file, metadata);
+  // load() waits for the job to finish
+  console.log(`Job ${job.id} completed.`);
+
+  // Check the job's status for errors
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    throw errors;
+  }else{
+    console.log("deletefiles");
+    myBucket.deleteFiles({ prefix: 'centra/shippingrates.txt' }, function(err) { if (!err) {}});
+  }
+
+}
