@@ -1,0 +1,10 @@
+const Firestore = require('@google-cloud/firestore');
+const PROJECTID = 'ideal-data-warehouse';
+const COLLECTION_NAME = 'import';
+const firestore = new Firestore({projectId: PROJECTID,timestampsInSnapshots: true,});
+var collectionRef = firestore.collection(COLLECTION_NAME);
+exports.productsxml_export = async (req, res) => {
+    var doc = await collectionRef.doc('xmlexports').get();
+    if (typeof doc.data()[req.query.code] == 'undefined') res.status(404).send("Could not recognize market id " + req.query.code) 
+    else res.status(200).redirect(doc.data()[req.query.code]);
+};
