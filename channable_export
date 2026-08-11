@@ -1,0 +1,42 @@
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+const converter = require('json-2-csv');
+const myBucket = storage.bucket('ideal_data_bucket');
+const file = myBucket.file('/centra/channable.csv');
+const config = {
+  action: 'read',
+  expires: '03-17-2025'
+};
+
+exports.channable_export = async (req, res) => {
+    var query = "SELECT sku, id AS productId, name AS productname, ean, weight, createdAt, brand AS brandName, google_merchant_category, IFNULL(sa_algolia_ranking,'') AS sa_algolia_ranking, IFNULL(sa_collection,'') AS sa_collection, IFNULL(sa_family,'') AS sa_family, sa_gender, IFNULL(sa_manufacturer,'') AS sa_manufacturer, sa_model, IFNULL(sa_pattern, '') AS sa_pattern, IFNULL(sa_phone_compatibility,'') AS sa_phone_compatibility, sa_product_group, sa_type, IF(sa_hidden IS NULL, '0', sa_hidden) AS sa_hidden, IF (sa_new_product IS NULL, '0', sa_new_product) AS sa_new_product, variant_name, variant_sku FROM `ideal-data-warehouse.centra.products_root` WHERE status = 'ACTIVE'";
+    var options = {
+      query: query,
+      location: 'EU',
+    };
+    var [job] = await bigquery.createQueryJob(options);
+    var [rows] = await job.getQueryResults();
+    converter.json2csv(rows, (err, csv) => {
+    if (err) {
+        res.status(400).send(err);
+    }
+    file.save(csv, function(erro) {
+        if (!err) {
+          file.getSignedUrl(config, function(err, url) {
+            if (err) {
+              console.error(err);
+              res.status(400).send(err)
+            }
+            res.status(200).redirect(url);
+          });
+        } else {
+          res.status(400).send(erro)
+        }
+    });
+  }) 
+};
