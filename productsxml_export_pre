@@ -1,0 +1,132 @@
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const { htmlToText } = require('html-to-text');
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+const Firestore = require('@google-cloud/firestore');
+const PROJECTID = 'ideal-data-warehouse';
+const COLLECTION_NAME = 'import';
+const firestore = new Firestore({
+  projectId: PROJECTID,
+  timestampsInSnapshots: true,
+});
+var collectionRef = firestore.collection(COLLECTION_NAME);
+const marketsBQ = [
+{"count":"Australia", "link":"https://idealofsweden.com.au/p/","rev":"au","local":"EN","short":"ENGB","code":"6","price":"40","warehouse":"CWNL","curr":"AUD","price_denominator": "2","iso":"AU"},
+{"count":"Austria", "link":"https://idealofsweden.at/p/","rev":"at","local":"DEDE","short":"DEDE","code":"23","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"AT"},
+{"count":"Belgium", "link":"https://idealofsweden.be/p/","rev":"be","local":"NLNL","short":"NLNL","code":"22","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"BE"},
+{"count":"Canada", "link":"https://idealofsweden.ca/p/","rev":"ca","local":"EN","short":"ENGB","code":"7","price":"39","warehouse":"CWSE","curr":"CAD","price_denominator": "2","iso":"CA"},
+{"count":"UnitedArabEmirates", "link":"https://idealofsweden.ae/p/","rev":"ae","local":"EN","short":"ENGB","code":"35","price":"80","warehouse":"CWNL","curr":"AED","price_denominator": "2","iso":"AE"},
+{"count":"SaudiArabia", "link":"https://idealofsweden.com.sa/p/","rev":"sa","local":"EN","short":"ENGB","code":"34","price":"79","warehouse":"CWNL","curr":"SAR","price_denominator": "2","iso":"SA"},
+{"count":"HongKong", "link":"https://idealofsweden.com.hk/p/","rev":"hk","local":"EN","short":"ENGB","code":"33","price":"81","warehouse":"CWNL","curr":"HKD","price_denominator": "2","iso":"HK"},
+{"count":"Russia", "link":"https://idealofsweden.ru/p/","rev":"ru","local":"RURU","short":"RURU","code":"36","price":"91","warehouse":"CWSE","curr":"RUB","price_denominator": "2","iso":"RU"},
+{"count":"Denmark", "link":"https://idealofsweden.dk/p/","rev":"dk","local":"DADK","short":"DADK","code":"9","price":"35","warehouse":"CWSE","curr":"DKK","price_denominator": "2","iso":"DK"},
+{"count":"Finland", "link":"https://idealofsweden.fi/p/","rev":"fi","local":"FIFI","short":"FIFI","code":"10","price":"23","warehouse":"CWSE","curr":"EUR","price_denominator": "2","iso":"FI"},
+{"count":"France", "link":"https://idealofsweden.fr/p/","rev":"fr","local":"FRFR","short":"FRFR","code":"11","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"FR"},
+{"count":"Germany", "link":"https://idealofsweden.de/p/","rev":"de","local":"DEDE","short":"DEDE","code":"1","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"DE"},
+{"count":"Europe", "link":"https://idealofsweden.eu/p/","rev":"eu","local":"EN","short":"ENGB","code":"4","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":""},
+{"count":"Greece", "link":"https://idealofsweden.gr/p/","rev":"gr","local":"EN","short":"ENGB","code":"24","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"GR"},
+{"count":"Italy", "link":"https://idealofsweden.it/p/","rev":"it","local":"ITIT","short":"ITIT","code":"19","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"IT"},
+{"count":"Japan", "link":"https://idealofsweden.jp/p/","rev":"jp","local":"EN","short":"ENGB","code":"12","price":"41","warehouse":"CWSE","curr":"JPY","price_denominator": "2","iso":"JP"},
+{"count":"Netherlands", "link":"https://idealofsweden.nl/p/","rev":"nl","local":"NLNL","short":"NLNL","code":"14","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"NL"},
+{"count":"Norway", "link":"https://idealofsweden.no/p/","rev":"no","local":"NBNO","short":"NBNO","code":"15","price":"34","warehouse":"CWSE","curr":"NOK","price_denominator": "2","iso":"NO"},
+{"count":"Poland", "link":"https://idealofsweden.pl/p/","rev":"pl","local":"PLPL","short":"PLPL","code":"25","price":"45","warehouse":"CWNL","curr":"PLN","price_denominator": "2","iso":"PL"},
+{"count":"Singapore", "link":"https://idealofsweden.sg/p/","rev":"sg","local":"EN","short":"ENGB","code":"16","price":"42","warehouse":"CWNL","curr":"SGD","price_denominator": "2","iso":"SG"},
+{"count":"SouthKorea", "link":"https://idealofsweden.co.kr/p/","rev":"kr","local":"KOKR","short":"KOKR","code":"13","price":"44","warehouse":"CWSE","curr":"KRW","price_denominator": "3","iso":"KR"},
+{"count":"Spain", "link":"https://idealofsweden.es/p/","rev":"es","local":"ESES","short":"ESES","code":"20","price":"23","warehouse":"CWNL","curr":"EUR","price_denominator": "2","iso":"ES"},
+{"count":"Sweden", "link":"https://idealofsweden.com/p/","rev":"se","local":"SVSE","short":"SVSE","code":"3","price":"24","warehouse":"CWSE","curr":"SEK","price_denominator": "2","iso":"SE"},
+{"count":"Switzerland", "link":"https://idealofsweden.ch/p/","rev":"ch","local":"DEDE","short":"DEDE","code":"8","price":"36","warehouse":"CWNL","curr":"CHF","price_denominator": "2","iso":"CH"},
+{"count":"UnitedKingdom", "link":"https://idealofsweden.co.uk/p/","rev":"uk","local":"EN","short":"ENGB","code":"17","price":"38","warehouse":"CWNL","curr":"GBP","price_denominator": "2","iso":"GB"},
+{"count":"UnitedStates", "link":"https://idealofsweden.us/p/","rev":"us","local":"EN","short":"ENGB","code":"18","price":"37","warehouse":"CWNL","curr":"USD","price_denominator": "2","iso":"US"},
+//{"count":"Fluent", "link":"","rev":"row","local":"EN","short":"ENGB","code":"26","price":"37","warehouse":"Fluent","curr":"USD","price_denominator": "2","iso":""},
+{"count":"ROW", "link":"https://idealofsweden.global/p/","rev":"row","local":"EN","short":"ENGB","code":"28","price":"37","warehouse":"CWSE","curr":"USD","price_denominator": "2","iso":""}];
+const myBucket = storage.bucket('ideal_data_bucket');
+
+const config = {
+  action: 'read',
+  expires: '12-03-2028'
+};
+
+exports.productsxml_export = async (req, res) => {
+  let lov = [];
+  for (var b = 0; b < marketsBQ.length; b++) {
+    lov.push(new Promise((resol, rej) => {
+      var mrk = marketsBQ[b];
+      var file = myBucket.file('/centra/xmlexports/' + mrk.count + 'products.xml');
+      var data = "<?xml version='1.0' encoding='UTF-8'?><products>";
+      getRoot(mrk).then((rows) => {
+        getCats(mrk.short).then((cats) => {
+          var i = 0;
+          while (i < rows.length) {
+            var desc = htmlToText(rows[i].description, {wordwrap: false});
+            var cat = cats.find(element => element.primary_products == rows[i].dispid);
+            let categories = "";
+            let salecategories = "";
+            let model = "";
+            let media = "";
+
+            if (rows[i].sa_phone_compatibility != "" && rows[i].sa_phone_compatibility != null) model = rows[i].sa_phone_compatibility.substring(0,rows[i].sa_phone_compatibility.indexOf(' '));
+            else model = rows[i].sa_model;
+            
+            for (var s = 0; s < rows[i].additional_image_links.length; s++) {
+              media += "<additional_image_link>" + rows[i].additional_image_links[s] + "</additional_image_link>"
+            }
+            if (typeof cat != 'undefined') {
+              salecategories = cat.sale
+              for (var p = 0; p < cat.cats.length; p++) {
+                categories += "<category_" + p + ">" + cat.cats[p] + "</category_" + p + ">"
+              }
+            }
+            
+            var googleid = "<custom_google_id>" + "1/" + mrk.short + "-p" + rows[i].productId + "-v" + rows[i].dispid + "-s" + "</custom_google_id>"
+            let predat = "<product><brandname>" + rows[i].brandname + "</brandname><createdAt>" + rows[i].createdAt + "</createdAt><ean>" + rows[i].ean + "</ean><google_merchant_category>" + rows[i].google_merchant_category + "</google_merchant_category>"+ googleid +"<productid>" + rows[i].productId + "</productid><sa_dynamic_badges>" + rows[i].sa_dynamic_badges + "</sa_dynamic_badges><pattern_group_brand_out>" + rows[i].sa_type + " (" + model + ") - " + rows[i].sa_pattern + "</pattern_group_brand_out><productname>" + rows[i].product + "</productname>" + categories + "<category_sale>" + salecategories + "</category_sale>" +"<sa_algolia_ranking>" + rows[i].sa_algolia_ranking + "</sa_algolia_ranking><collection>" + rows[i].collection + "</collection><sa_collection>" + rows[i].sa_collection + "</sa_collection><sa_family>" + rows[i].sa_family + "</sa_family><sa_gender>" + rows[i].sa_gender + "</sa_gender><sa_hidden>" + rows[i].sa_hidden + "</sa_hidden><bestseller>" + rows[i].bestseller + "</bestseller><male_bestseller>" + rows[i].male_bestseller + "</male_bestseller><sa_manufacturer>" + rows[i].sa_manufacturer + "</sa_manufacturer><sa_model>" + rows[i].sa_model + "</sa_model><sa_new_product>" + rows[i].sa_new_product + "</sa_new_product><sa_pattern>" + rows[i].sa_pattern + "</sa_pattern><sa_phone_compatibility>" + rows[i].sa_phone_compatibility + "</sa_phone_compatibility><sa_product_group>" + rows[i].sa_product_group + "</sa_product_group><sa_type>" + rows[i].sa_type + "</sa_type><sku>" + rows[i].sku + "</sku><mpn>" + rows[i].mpn + "</mpn><weight>" + rows[i].weight + "</weight><availability>" + rows[i].availability + "</availability><description>" + desc.replace(/&/g, "&amp;") + "</description><image_link>" + rows[i].image_link + "</image_link>" + media + "<link>" + rows[i].link + "</link><price>" + rows[i].price + "</price><sale_price>" + rows[i].sale_price + "</sale_price><sale_price_effective_date>" + rows[i].sale_price_effective_date + "</sale_price_effective_date><sale_price_currently_active>" + rows[i].sale_price_currently_active + "</sale_price_currently_active><display_name>" + rows[i].display_name + "</display_name><currency>" + rows[i].currency + "</currency><title>" + rows[i].title + "</title><sales_revenue_last7day>" + rows[i].sales_revenue_last7day + "</sales_revenue_last7day><sales_quantity_last7day>" + rows[i].sales_quantity_last7day + "</sales_quantity_last7day><country_iso_3166>" + rows[i].country_iso_3166 + "</country_iso_3166><stock_level>" + rows[i].stock_level + "</stock_level><shipping_cost>" + rows[i].shipping_cost + "</shipping_cost><condition>" + rows[i].condition + "</condition></product>"
+            data += predat;
+            i++
+          }
+          data += "</products>"
+          data = data.replace(/&/g,'&amp;');
+          file.save(data, function(erro) {
+            file.getSignedUrl(config, function(err, url) {
+              if (err) console.error(err);
+              console.log("Market",mrk.code,"done with",rows.length,"rows")
+              collectionRef.doc('xmlexports').update({ [mrk.code]: url }).then((values) => {
+                resol();
+              });
+            });
+          });
+        });
+      });
+    }));
+  }
+  Promise.all(lov).then((values) => {
+    res.status(200).send('Done');
+  });
+};
+
+async function getRoot(mrk){
+  var shipping = "SELECT * FROM `ideal-data-warehouse.centra.shipping_rates` WHERE marketId = " + mrk.code + " AND code = '" + mrk.curr + "' AND '" + mrk.iso + "' IN UNNEST(countries) ORDER BY value ASC LIMIT 1";
+  if (mrk.iso == "") shipping = "SELECT * FROM `ideal-data-warehouse.centra.shipping_rates` WHERE marketId = " + mrk.code + " AND code = '" + mrk.curr + "' ORDER BY value ASC LIMIT 1";
+  var query = "SELECT DISTINCT t0.brand AS brandname, CAST(t0.createdAt AS STRING) AS createdAt, CASE WHEN t0.isBundle THEN t12.ean ELSE t0.ean END AS ean, CASE WHEN t0.isBundle THEN IFNULL(t12.google_merchant_category, '') ELSE IFNULL(t0.google_merchant_category, '') END AS google_merchant_category, t0.id AS productId, IFNULL(t0.sa_dynamic_badges,'') as sa_dynamic_badges, IFNULL(CAST(t10.displayItemId AS STRING),'') AS dispid, t0.name AS product, IFNULL(t0.sa_algolia_ranking, '') AS sa_algolia_ranking, IFNULL(t0.collection, '') AS collection, IFNULL(t0.sa_collection, '') AS sa_collection, IFNULL(t0.sa_family, '') AS sa_family, IFNULL(t0.sa_gender, '') AS sa_gender, IFNULL(t0.sa_hidden, '0') AS sa_hidden, IFNULL(t0.sa_manufacturer, '') AS sa_manufacturer, IFNULL(t0.sa_model, '') AS sa_model, IFNULL(t0.sa_new_product, '0') AS sa_new_product, IFNULL(t0.sa_pattern, '') AS sa_pattern, IFNULL(t0.sa_phone_compatibility, '') AS sa_phone_compatibility, IFNULL(t0.sa_product_group, '') AS sa_product_group, IFNULL(t0.sa_type, '') AS sa_type, IFNULL(CONCAT(t1.localized." + mrk.short + ".name, ' > ', t2.localized." + mrk.short + ".name), '') AS category_1, t0.sku, CASE WHEN t0.isBundle THEN t12.sku ELSE t0.sku END AS mpn, t0.weight, CASE WHEN CAST(t5." + mrk.warehouse + " AS STRING) != '0' THEN 'in stock' ELSE 'out of stock' END AS availability, IFNULL(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(t6.description, '<ul>',''), '</ul>',''), '</li>',''), ' <li>',' * '), '<br/><br/>',''), t0.description) AS description, IFNULL(t0.frontImage, '') AS image_link, IFNULL(t7.urls,[]) AS additional_image_links, IFNULL(CONCAT('" + mrk.link + "',t10.uri), '') AS link, IFNULL(CONCAT(ROUND(t8.price," + mrk.price_denominator + "), ' ', t8.currency), '') AS price, IFNULL( CASE WHEN t9.type = 'PERCENT' AND t9.startAt <= CURRENT_TIMESTAMP() AND t9.stopAt >= CURRENT_TIMESTAMP() THEN CAST(CONCAT((ROUND(t8.price *(1-(t9.discountPercent/100))," + mrk.price_denominator + ")), ' ', t8.currency) AS STRING) WHEN t9.type = 'FIXED_PRICE' AND t9.startAt <= CURRENT_TIMESTAMP() AND t9.stopAt >= CURRENT_TIMESTAMP() THEN CAST(t9.fixedPrice AS STRING) ELSE '' END ,'') AS sale_price, IFNULL(CONCAT(FORMAT_DATETIME('%Y-%m-%dT%H:%M+0000',DATETIME (PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', substr(STRING(t9.startAt), 0 ,19), 'Europe/Stockholm')) ), '/', FORMAT_DATETIME('%Y-%m-%dT%H:%M+0000',DATETIME (PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', substr(STRING(t9.stopAt), 0 ,19), 'Europe/Stockholm')) )),'') AS sale_price_effective_date, CASE WHEN t9.startAt <= CURRENT_TIMESTAMP() AND t9.stopAt >= CURRENT_TIMESTAMP() THEN true ELSE false END AS sale_price_currently_active,CASE WHEN t13.salesrank IS NULL THEN FALSE ELSE TRUE END AS bestseller,CASE WHEN t13.salesrank IS NOT NULL AND t0.sa_gender = 'Male' THEN TRUE ELSE FALSE END AS male_bestseller, IFNULL(t10.name, '') AS display_name, t8.currency AS currency, t0.name AS title, IFNULL(t3.revenue_" + mrk.rev + ", 0) AS sales_revenue_last7day, IFNULL(t3.quantity_" + mrk.rev + ", 0) AS sales_quantity_last7day, '" + mrk.iso + "' AS country_iso_3166, IFNULL(t5." + mrk.warehouse + ", 0) AS stock_level, IFNULL(CONCAT(t4.value, ' ', t4.code), '') AS shipping_cost, 'new' AS condition FROM ( SELECT * FROM `ideal-data-warehouse.centra.products_root` WHERE status = 'ACTIVE') t0 LEFT JOIN ( SELECT * EXCEPT(RN) FROM ( SELECT localized, prim, category, inCategory, name, ROW_NUMBER() OVER (PARTITION BY prim ORDER BY sortOrder DESC ) RN FROM `ideal-data-warehouse.centra.categories`, UNNEST(primaryProducts) AS prim WHERE localized." + mrk.short + ".name IS NOT NULL) WHERE RN = 1) t1 ON t1.prim = t0.id LEFT JOIN ( SELECT * EXCEPT(RN) FROM ( SELECT localized, inCategory, category, ROW_NUMBER() OVER (PARTITION BY inCategory ORDER BY sortOrder DESC ) RN FROM `ideal-data-warehouse.centra.categories` WHERE localized." + mrk.short + ".name IS NOT NULL) WHERE RN = 1) t2 ON t2.inCategory = t1.category LEFT JOIN `ideal-data-warehouse.aggregations.sevendayrev_exmoms` t3 ON t0.sku = t3.sku LEFT JOIN (" + shipping + ") t4 ON t4.marketId = " + mrk.code + " LEFT JOIN `ideal-data-warehouse.centra.stock` t5 ON t0.sku = t5.sku LEFT JOIN `ideal-data-warehouse.centra.products_localized` t6 ON t0.sku = t6.sku AND t6.language = UPPER('" + mrk.local + "') AND t6.description IS NOT NULL LEFT JOIN (SELECT displayid, ARRAY_AGG(url) AS urls FROM `ideal-data-warehouse.centra.products_displays_media` GROUP BY displayid) t7 ON CAST(t0.frontDisplay AS STRING) = t7.displayid LEFT JOIN `ideal-data-warehouse.centra.products_prices` t8 ON t0.sku = t8.sku AND t8.id = '" + mrk.price + "' LEFT JOIN (SELECT * EXCEPT(RN) FROM ( SELECT *, ROW_NUMBER() OVER (PARTITION BY product ORDER BY startAt ASC ) RN FROM `ideal-data-warehouse.centra.products_campaigns` WHERE startAt <= CURRENT_TIMESTAMP() AND stopAt >= CURRENT_TIMESTAMP() AND " + parseInt(mrk.code) + " IN UNNEST(markets)) WHERE RN = 1) t9 ON t0.id = t9.product LEFT JOIN `ideal-data-warehouse.centra.products_displays_root` t10 ON t0.frontDisplay = t10.id LEFT JOIN `ideal-data-warehouse.centra.products_bundles_products` t11 ON t0.id = t11.id AND t11.primary LEFT JOIN `ideal-data-warehouse.centra.products_root` t12 ON t11.bundle_product_id = t12.id LEFT JOIN `ideal-data-warehouse.aggregations.vw_salesrank_by_display` t13 ON t10.displayItemId IN UNNEST(t13.dispId) AND t13.marketId = " + parseInt(mrk.code) + " AND t13.salesrank <= 100 WHERE " + parseInt(mrk.code) + " IN UNNEST(t10.markets)";
+  console.log(mrk.count, query);
+  var options = {
+    query: query,
+    location: 'EU',
+  };
+  var [job] = await bigquery.createQueryJob(options);
+  var [rows] = await job.getQueryResults();
+  return rows;
+}
+async function getCats(lang){
+  var query = "WITH fruits AS(SELECT primary_products,CASE WHEN STARTS_WITH(t1.completeUri, 'categories/sale') IS NOT TRUE AND t2.localized." + lang + ".name IS NOT NULL THEN Ifnull(Concat(t2.localized." + lang + ".name, ' > ',t1.localized." + lang + ".name),Ifnull(Concat(t2.localized." + lang + ".name, ' > ',t1.name),t2.localized." + lang + ".name)) ELSE '' END AS level2, CASE WHEN STARTS_WITH(t1.completeUri, 'categories/sale') AND t2.localized." + lang + ".name IS NOT NULL THEN Ifnull(Concat(t2.localized." + lang + ".name, ' > ',t1.localized." + lang + ".name),Ifnull(Concat(t2.localized." + lang + ".name, ' > ',t1.name),t2.localized." + lang + ".name)) ELSE '' END AS sale, t1.sortorder + t2.sortorder + t3.sortorder AS sort FROM `ideal-data-warehouse.centra.categories` t1 LEFT JOIN unnest(t1.primaryproducts) AS primary_products LEFT JOIN `ideal-data-warehouse.centra.categories` t2 ON t1.incategory = t2.category LEFT JOIN `ideal-data-warehouse.centra.categories` t3 ON t2.incategory = t3.category WHERE t3.NAME='Categories' ORDER BY sort DESC) SELECT array_agg(level2) AS cats, ARRAY_TO_STRING(ARRAY_AGG(sale),'') AS sale, primary_products FROM fruits GROUP BY primary_Products";
+  var options = {
+    query: query,
+    location: 'EU',
+  };
+  var [job] = await bigquery.createQueryJob(options);
+  var [rows] = await job.getQueryResults();
+  return rows;
+}
