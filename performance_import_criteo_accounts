@@ -1,0 +1,289 @@
+const datasetId = "paid_performance";
+const tableId = "criteo_accounts";
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+var stores = ["46433","50047","50131","49002","34609","50043"]
+
+const https = require('https');
+
+exports.criteo = async (req, res) => {
+  console.log('Startar');
+  var token = await getToken();
+  console.log('Fick token',token);
+  var data = await callHttp(token);
+  console.log('Fick data:',data);
+  await load(data);
+  res.status(200).send('Done');
+};
+function getToken(){
+  return new Promise((resolve, reject) => {
+  try {
+          var qs = require('querystring');
+console.log('Startar get token');
+          const options = {
+   		    host: 'api.criteo.com',
+      	  path: '/oauth2/token',
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          };
+          var req = https.request(options, function (res) {
+          var chunks = [];
+
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+
+          res.on("end", function (chunk) {
+            var local = JSON.parse(Buffer.concat(chunks).toString());
+            console.log('fick token: '+local.access_token);
+            resolve(local.access_token);
+          });
+          res.on("error", function (error) {
+            console.log(error);
+          });
+        });
+        var postData = qs.stringify({
+          'grant_type': 'client_credentials',
+          'client_id': '0674a31ccbd54571828eafbbb3907c0e',
+          'client_secret': 'Qq375kS3vpeLrgtGo7q4wYxPnNO2Ow3N2VxaSEDhr36z'
+        });
+        req.write(postData);
+        req.end();
+  } catch (e) {
+    console.log("faila",e);
+    reject();
+  }
+  });
+}
+function callHttp(token){
+  return new Promise((resolve, reject) => {
+  try {
+    console.log('Startar callHttp');
+          var date = new Date();
+          date = new Date(date.setDate(date.getDate() - 1));
+          date = date.toISOString().slice(0,10);
+
+          const options = {
+   		    host: 'api.criteo.com',
+      	  path: '/2021-07/statistics/report',
+          method: 'POST',
+          headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer ' + token
+            }
+          };
+          var req = https.request(options, function (res) {
+          var chunks = [];
+          let status = res.statusCode;
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+
+          res.on("end", function (chunk) {
+            var ob = Buffer.concat(chunks).toString();
+            var obj = ob.slice(ob.indexOf('['), (ob.indexOf(']')+1))
+            var body = JSON.parse(obj)
+            console.log(body);
+            resolve(body);
+          });
+
+          res.on("error", function (error) {
+            console.log(error);
+          });
+        });
+        var postData = JSON.stringify({
+        "dimensions": [
+            "Day",
+            "Advertiser"
+        ],
+        "metrics": [
+            "Clicks",
+            "Displays",
+            "ViewableDisplays",
+            "NonViewableDisplays",
+            "UntrackableDisplays",
+            "AdvertiserCost",
+            "QualifiedVisits",
+            "CostPerVisit",
+            "BounceRate",
+            "PotentialDisplays",
+            "OverallCompetitionWin",
+            "SalesAllClientAttribution",
+            "SalesPv24h",
+            "SalesAllPv24h",
+            "SalesPc1d",
+            "SalesAllPc1d",
+            "AverageCartAllClientAttribution",
+            "AverageCartPv24h",
+            "AverageCartAllPv24h",
+            "AverageCartPc1d",
+            "AverageCartAllPc1d",
+            "ClickThroughRate",
+            "ConversionRateAllClientAttribution",
+            "ConversionRatePv24h",
+            "ConversionRateAllPv24h",
+            "ConversionRatePc1d",
+            "ConversionRateAllPc1d",
+            "ECosAllClientAttribution",
+            "ECosPv24h",
+            "ECosAllPv24h",
+            "ECosPc1d",
+            "ECosAllPc1d",
+            "CostPerOrderAllClientAttribution",
+            "CostPerOrderPv24h",
+            "CostPerOrderAllPv24h",
+            "CostPerOrderPc1d",
+            "CostPerOrderAllPc1d",
+            "Cpc",
+            "ECpm",
+            "RoasAllClientAttribution",
+            "RoasPv24h",
+            "RoasAllPv24h",
+            "RoasPc1d",
+            "RoasAllPc1d",
+            "AdvertiserValue",
+            "AdvertiserAllValue",
+            "CostOfAdvertiserValue",
+            "CostOfAdvertiserValueAll",
+            "PostInstallSales",
+            "AppInstalls",
+            "PostInstallConversionRate",
+            "PostInstallCostOfSale",
+            "PostInstallOrderValue",
+            "CostPerInstall",
+            "InstallRate",
+            "PostInstallCostPerOrder",
+            "PostInstallRoas",
+            "OmnichannelRoasClientAttribution",
+            "OmnichannelRoasPv24h",
+            "OmnichannelRoasAllPv24h",
+            "OmnichannelRevenueClientAttribution",
+            "OmnichannelRevenuePv24h",
+            "OmnichannelRevenueAllPv24h",
+            "OmnichannelsalesClientAttribution",
+            "OmnichannelSalesPv24h",
+            "OmnichannelSalesAllPv24h",
+            "RoasOfflinePv24h",
+            "SalesOfflinePv24h",
+            "RevenueGeneratedOfflinePv24h",
+            "Visits"
+        ],
+        "timezone": "UTC",
+        "format": "json",
+        "currency": "SEK",
+        "advertiserIds":stores.join(','),
+        "startDate":date,
+        "endDate":date
+    })
+        req.write(postData);
+        req.end();
+  } catch (e) {
+    console.log("faila",e);
+    reject();
+  }
+  });
+}
+async function load(resdata) {
+  const metadata = {
+    ignoreUnknownValues: true,
+    schema: {
+      fields: [
+                    {name: "Day", type: 'DATE'},
+                    {name: "AdvertiserId", type: 'STRING'},
+                    {name: "Advertiser", type: 'STRING'},
+                    {name: "Currency", type: 'STRING'},
+                    {name: "Clicks", type: 'STRING'},
+                    {name: "Displays", type: 'STRING'},
+                    {name: "ViewableDisplays", type: 'STRING'},
+                    {name: "NonViewableDisplays", type: 'STRING'},
+                    {name: "UntrackableDisplays", type: 'STRING'},
+                    {name: "AdvertiserCost", type: 'STRING'},
+                    {name: "QualifiedVisits", type: 'STRING'},
+                    {name: "CostPerVisit", type: 'STRING'},
+                    {name: "BounceRate", type: 'STRING'},
+                    {name: "PotentialDisplays", type: 'STRING'},
+                    {name: "OverallCompetitionWin", type: 'STRING'},
+                    {name: "SalesAllClientAttribution", type: 'STRING'},
+                    {name: "SalesPv24h", type: 'STRING'},
+                    {name: "SalesAllPv24h", type: 'STRING'},
+                    {name: "SalesPc1d", type: 'STRING'},
+                    {name: "SalesAllPc1d", type: 'STRING'},
+                    {name: "AverageCartAllClientAttribution", type: 'STRING'},
+                    {name: "AverageCartPv24h", type: 'STRING'},
+                    {name: "AverageCartAllPv24h", type: 'STRING'},
+                    {name: "AverageCartPc1d", type: 'STRING'},
+                    {name: "AverageCartAllPc1d", type: 'STRING'},
+                    {name: "ClickThroughRate", type: 'STRING'},
+                    {name: "ConversionRateAllClientAttribution", type: 'STRING'},
+                    {name: "ConversionRatePv24h", type: 'STRING'},
+                    {name: "ConversionRateAllPv24h", type: 'STRING'},
+                    {name: "ConversionRatePc1d", type: 'STRING'},
+                    {name: "ConversionRateAllPc1d", type: 'STRING'},
+                    {name: "ECosAllClientAttribution", type: 'STRING'},
+                    {name: "ECosPv24h", type: 'STRING'},
+                    {name: "ECosAllPv24h", type: 'STRING'},
+                    {name: "ECosPc1d", type: 'STRING'},
+                    {name: "ECosAllPc1d", type: 'STRING'},
+                    {name: "CostPerOrderAllClientAttribution", type: 'STRING'},
+                    {name: "CostPerOrderPv24h", type: 'STRING'},
+                    {name: "CostPerOrderAllPv24h", type: 'STRING'},
+                    {name: "CostPerOrderPc1d", type: 'STRING'},
+                    {name: "CostPerOrderAllPc1d", type: 'STRING'},
+                    {name: "Cpc", type: 'STRING'},
+                    {name: "ECpm", type: 'STRING'},
+                    {name: "RoasAllClientAttribution", type: 'STRING'},
+                    {name: "RoasPv24h", type: 'STRING'},
+                    {name: "RoasAllPv24h", type: 'STRING'},
+                    {name: "RoasPc1d", type: 'STRING'},
+                    {name: "RoasAllPc1d", type: 'STRING'},
+                    {name: "AdvertiserValue", type: 'STRING'},
+                    {name: "AdvertiserAllValue", type: 'STRING'},
+                    {name: "CostOfAdvertiserValue", type: 'STRING'},
+                    {name: "CostOfAdvertiserValueAll", type: 'STRING'},
+                    {name: "PostInstallSales", type: 'STRING'},
+                    {name: "AppInstalls", type: 'STRING'},
+                    {name: "PostInstallConversionRate", type: 'STRING'},
+                    {name: "PostInstallCostOfSale", type: 'STRING'},
+                    {name: "PostInstallOrderValue", type: 'STRING'},
+                    {name: "CostPerInstall", type: 'STRING'},
+                    {name: "InstallRate", type: 'STRING'},
+                    {name: "PostInstallCostPerOrder", type: 'STRING'},
+                    {name: "PostInstallRoas", type: 'STRING'},
+                    {name: "OmnichannelRoasClientAttribution", type: 'STRING'},
+                    {name: "OmnichannelRoasPv24h", type: 'STRING'},
+                    {name: "OmnichannelRoasAllPv24h", type: 'STRING'},
+                    {name: "OmnichannelRevenueClientAttribution", type: 'STRING'},
+                    {name: "OmnichannelRevenuePv24h", type: 'STRING'},
+                    {name: "OmnichannelRevenueAllPv24h", type: 'STRING'},
+                    {name: "OmnichannelsalesClientAttribution", type: 'STRING'},
+                    {name: "OmnichannelSalesPv24h", type: 'STRING'},
+                    {name: "OmnichannelSalesAllPv24h", type: 'STRING'},
+                    {name: "RoasOfflinePv24h", type: 'STRING'},
+                    {name: "SalesOfflinePv24h", type: 'STRING'},
+                    {name: "RevenueGeneratedOfflinePv24h", type: 'STRING'},
+                    {name: "Visits", type: 'STRING'}
+
+      ],
+    },
+    writeDisposition: 'WRITE_APPEND',
+  };
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .insert(resdata, metadata).catch((error) => {
+      if (error.errors && error.errors.length > 0) {
+        error.errors.forEach(error => console.error(error));
+        console.error(error.errors[0].row);
+      }
+  });
+      console.log("Streamed:",resdata.length)
+
+  return;
+}
