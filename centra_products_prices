@@ -1,0 +1,142 @@
+const datasetId = "centra";
+const tableId = "products_prices";
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const myBucket = storage.bucket('ideal_data_bucket');
+const bucketName = 'ideal_data_bucket';
+const filename = '/centra/products_prices.txt';
+const file = myBucket.file(filename);
+
+const https = require('https');
+
+exports.price = async (event, context, callback) => {
+  var pages = 1;
+  var ndjson = "";
+  var total = 0;
+  while (pages) {
+    console.log(pages,total);
+    var resu = await callHttp(pages);
+    if (resu.long > 1) {
+      total += resu.long;
+      ndjson += resu.data;
+      pages++;
+    } else {
+      pages = false;
+    }
+  }
+  console.log("Fetched",total,"items");
+  await saveFile(ndjson);
+  console.log("Saved file");
+  await load();
+  callback(null, 'Loaded products_prices'); 
+};
+
+function saveFile(data) {
+  return new Promise((resolve, reject) => {
+    file.save(data,{
+                    autoRetry: true, // <<-- required to enable retries for multipart.
+                    resumable: false, // means, use multipart upload instead of resumable upload.
+                    }, function(err) {
+        if (!err) {
+          resolve();
+        } else {
+            console.log(erro)
+            reject();
+          }
+      });
+  });
+}
+function callHttp(page){
+  return new Promise((resolve, reject) => {
+  try {
+          var payload = '{"query": "query{products(page:'+ page +',limit:200){productNumber prices{pricelist{id name}price{value currency{name}}}}}"}';
+          const options = {
+   		    host: 'ideal.centra.com',
+      	  path: '/graphql',
+          method: 'POST',
+          headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer 80ca84a8c4e525eded695d07b4e0a75c'
+            }
+          };
+
+          var req = https.request(options, function (res) {
+          var chunks = [];
+
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+
+          res.on("end", function (chunk) {
+            var local = JSON.parse(Buffer.concat(chunks).toString());
+            var txt = "";
+            if (res.statusCode != 400) {
+              for (var i = 0; i < local.data.products.length; i++) {
+                  for (var d = 0; d < local.data.products[i].prices.length; d++) {
+                    let pre = {
+                      "sku": local.data.products[i].productNumber,
+                      "id": local.data.products[i].prices[d].pricelist.id.toString(),
+                      "price": 0,
+                      "pricelist": local.data.products[i].prices[d].pricelist.name,
+                      "currency": ""
+                    }
+                    if (local.data.products[i].prices[d].price != null) {
+                      pre.price = local.data.products[i].prices[d].price.value;
+                      pre.currency = local.data.products[i].prices[d].price.currency.name;
+                    }
+                    txt += JSON.stringify(pre) + "\n";
+                  }
+              }
+              resolve({"data":txt,"long":local.data.products.length});
+            } else {
+              resolve({"data":txt,"long":2});
+            }
+
+          });
+          res.on("error", function (error) {
+            console.log(error);
+          });
+        });
+        req.write(payload);
+
+        req.end();
+  } catch (e) {
+    console.log("faila",e);
+    reject();
+  }
+  });
+}
+async function load() {
+  const metadata = {
+    sourceFormat: 'NEWLINE_DELIMITED_JSON',
+    ignoreUnknownValues: true,
+    schema: {
+      fields: [
+       {name: 'sku', type: 'STRING'},
+       {name: 'id', type: 'STRING'},
+       {name: 'price', type: 'FLOAT'},
+       {name: 'pricelist', type: 'STRING'},
+       {name: 'currency', type: 'STRING'}
+      ],
+    },
+    writeDisposition: 'WRITE_TRUNCATE',
+  };
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  console.log(`Job ${job.id} completed.`);
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    console.error(errors);
+    throw errors;
+  }else{
+    storage.bucket(bucketName).deleteFiles({ prefix: filename }, function(err) { if (!err) { return 'price loaded to BigQuery!';}});
+  }
+}
