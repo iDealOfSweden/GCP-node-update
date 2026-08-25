@@ -1,0 +1,199 @@
+const {CloudTasksClient} = require('@google-cloud/tasks');
+const Firestore = require('@google-cloud/firestore');
+const PROJECTID = 'ideal-data-warehouse';
+const COLLECTION_NAME = 'stock';
+const firestore = new Firestore({
+  projectId: PROJECTID,
+  timestampsInSnapshots: true,
+});
+var collectionRef = firestore.collection(COLLECTION_NAME);
+
+const datasetId = "centra";
+const tableId = "stock";
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+const {Storage} = require('@google-cloud/storage');
+const storage = new Storage();
+const myBucket = storage.bucket('ideal_data_bucket');
+const bucketName = 'ideal_data_bucket';
+const file = myBucket.file('/centra/stock.txt');
+const filename = '/centra/stock.txt';
+
+const https = require('https');
+var data = [];
+
+exports.stock = async (req, res) => {
+
+  const snapshot = await collectionRef.get();
+  snapshot.forEach(doc => {
+    data.push(doc.data())
+  });
+
+  var pages = 1;
+  var ndjson = "";
+  var total = 0;
+  while (pages) {
+    var resu = await callHttp(pages);
+    if (resu.long > 1) {
+      total += resu.long;
+      ndjson += resu.data;
+      pages++;
+    } else {
+      pages = false;
+    }
+  }
+  console.log("Fetched",total,"items");
+  await saveFile(ndjson);
+  console.log("Saved file");
+  await load();
+  res.status(200).send('Loaded stock');
+};
+
+function saveFile(data) {
+  return new Promise((resolve, reject) => {
+    file.save(data, function(err) {
+        if (!err) {
+          resolve();
+        } else {
+            console.error(err);
+            reject();
+          }
+      });
+  });
+}
+function callHttp(page){
+  return new Promise((resolve, reject) => {
+  try {
+          const options = {
+   		    host: 'ideal.centra.com',
+      	  path: '/graphql',
+          method: 'POST',
+          headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer 80ca84a8c4e525eded695d07b4e0a75c'
+            }
+          };
+
+          var req = https.request(options, function (res) {
+          var chunks = [];
+
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+
+          res.on("end", function (chunk) {
+            var stock = JSON.parse(Buffer.concat(chunks).toString());
+            var txt = "";
+            var batch = firestore.batch();
+            for (var i = 0; i < stock.data.productVariants.length; i++) {
+
+              if (stock.data.productVariants[i].product.SKU != "" && typeof stock.data.productVariants[i].product.SKU != 'undefined') {
+                let diff = data.find(element => element.SKU == stock.data.productVariants[i].product.SKU)
+                let pre = {
+                  "displayitemid": stock.data.productVariants[i].displayitemid,
+                  "SKU": stock.data.productVariants[i].product.SKU,
+                  "name": stock.data.productVariants[i].product.name
+                };
+                for (var d = 0; d < stock.data.productVariants[i].stock.length; d++) {
+                  if (typeof diff != 'undefined') {
+                    if (stock.data.productVariants[i].stock[d].qty > (diff[stock.data.productVariants[i].stock[d].warehouse.name] + 2)) {
+                      console.log('New:',stock.data.productVariants[i].stock[d].qty,'Old:',diff[stock.data.productVariants[i].stock[d].warehouse.name],stock.data.productVariants[i].product.SKU,stock.data.productVariants[i].stock[d].warehouse.name)
+                      createHttpTask(stock.data.productVariants[i].product.SKU, stock.data.productVariants[i].stock[d].warehouse.name)
+                    }
+                  } else {
+                    createHttpTask(stock.data.productVariants[i].product.SKU, stock.data.productVariants[i].stock[d].warehouse.name)
+                  }
+                  pre[stock.data.productVariants[i].stock[d].warehouse.name] = stock.data.productVariants[i].stock[d].qty;
+                }
+                txt += JSON.stringify(pre) + "\n";
+                var refi = collectionRef.doc(stock.data.productVariants[i].product.SKU);
+                batch.set(refi, pre);
+              }
+            }
+            batch.commit().then((value) => {
+              resolve({"data":txt,"long":stock.data.productVariants.length});
+            });
+          });
+          res.on("error", function (error) {
+            console.log(error);
+          });
+        });
+        req.write('{"query": "query{productVariants(page:'+page+',limit:200){displayitemid:id product{SKU:productNumber name}stock(where: {warehouseId: [7,8,9,10,11,12,22]}){qty:freeToAllocateQuantity warehouse{name}}}}"}');
+
+        req.end();
+  } catch (e) {
+    console.log("faila",e);
+    reject();
+  }
+  });
+}
+async function load() {
+  const metadata = {
+    sourceFormat: 'NEWLINE_DELIMITED_JSON',
+    ignoreUnknownValues: true,
+    schema: {
+      fields: [
+       {name: 'sku', type: 'STRING'},
+       {name: 'displayitemid', type: 'INTEGER'},
+       {name: 'name', type: 'STRING'},
+       {name: 'cwse', type: 'INTEGER'},
+       {name: 'cwnl', type: 'INTEGER'},
+       {name: 'cwjp', type: 'INTEGER'},
+       {name: 'jjuk', type: 'INTEGER'},
+       {name: 'jjus', type: 'INTEGER'},
+       {name: 'drexel', type: 'INTEGER'},
+       {name: 'ppaus', type: 'INTEGER'},
+
+      ],
+    },
+    writeDisposition: 'WRITE_TRUNCATE',
+  };
+  const [job] = await bigquery
+    .dataset(datasetId)
+    .table(tableId)
+    .load(storage.bucket(bucketName).file(filename), metadata);
+  console.log(`Job ${job.id} completed.`);
+  const errors = job.status.errors;
+  if (errors && errors.length > 0) {
+    console.error(errors);
+    throw errors;
+  }else{
+    storage.bucket(bucketName).deleteFiles({ prefix: filename }, function(err) { if (!err) { return 'stock loaded to BigQuery!';}});
+  }
+}
+async function createHttpTask(sku,loc) {
+  const client = new CloudTasksClient();
+
+  const project = 'ideal-data-warehouse';
+  const queue = 'stocknotification';
+  const location = 'us-east1';
+  const serviceAccountEmail = 'ideal-data-warehouse@appspot.gserviceaccount.com';
+  const url = 'https://europe-west2-ideal-data-warehouse.cloudfunctions.net/centra_stock_notification_ob_retry';
+  const inSeconds = 60;
+
+  const parent = client.queuePath(project, location, queue);
+  const task = {
+    httpRequest: {
+      httpMethod: 'POST',
+      url,
+      oidcToken: {
+        serviceAccountEmail
+      },
+      headers: {
+          'content-type': 'application/octet-stream'
+      }
+    },
+  };
+  task.httpRequest.body = Buffer.from(JSON.stringify({"sku": sku, "loc": loc})).toString('base64');
+  task.scheduleTime = {
+    seconds: inSeconds + Date.now() / 1000,
+  };
+  const request = {parent, task};
+  const [response] = await client.createTask(request);
+  console.log(`Created task ${response.name}`);
+  return;
+}
