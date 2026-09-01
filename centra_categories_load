@@ -1,0 +1,100 @@
+const https = require('https');
+var status = "";
+let data = '';
+const { Storage } = require('@google-cloud/storage');
+const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
+
+exports.centra_categories_load = async (req, res) => {
+    await callHttp();
+    let message = req.query.message || req.body.message || 'Centra processing done';
+    res.status(200).send(message);
+};
+
+async function callHttp() {
+    const client = new SecretManagerServiceClient();
+    const [version] = await client.accessSecretVersion({
+        name: 'projects/160110390064/secrets/centra_shop/versions/1',
+    });
+    return new Promise((resolve, reject) => {
+        const secret = version.payload.data.toString();
+        const statusCode = '';
+        const options = {
+            host: 'ideal.centra.com',
+            path: '/api/bigquery-shop/128/categories',
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'API-Authorization': ''+secret
+            }
+        };
+        //console.log(options);
+        const req = https.request(options, (res) => {
+            console.log('STATUS: ' + res.statusCode);
+            status = res.statusCode;
+            data = '';
+            res.on('data', function(chunk) {
+                data += chunk;
+            });
+            res.on('end', function() {
+                var categoriesPayload = JSON.parse(data);
+                var categoriesnd = "";
+                for (var key in categoriesPayload) {
+                    delete categoriesPayload[key].products;
+                    //delete categoriesPayload[key].primaryProducts;
+                    delete categoriesPayload[key].metaTitle;
+                    delete categoriesPayload[key].metaDescription;
+                    delete categoriesPayload[key].metaKeywords;
+                    var secondCategories = categoriesPayload[key].categories;
+                    delete categoriesPayload[key].categories;
+                    categoriesnd += JSON.stringify(categoriesPayload[key]) + "\n";
+                    for (var i in secondCategories) {
+                        delete secondCategories[i].products;
+                        //delete secondCategories[i].primaryProducts;
+                        delete secondCategories[i].metaTitle;
+                        delete secondCategories[i].metaDescription;
+                        delete secondCategories[i].metaKeywords;
+                        var thirdCategories = secondCategories[i].categories;
+                        delete secondCategories[i].categories;
+                        categoriesnd += JSON.stringify(secondCategories[i]) + "\n";
+                        for (var j in thirdCategories) {
+                            delete thirdCategories[j].products;
+                            //delete thirdCategories[j].primaryProducts;
+                            delete thirdCategories[j].metaTitle;
+                            delete thirdCategories[j].metaDescription;
+                            delete thirdCategories[j].metaKeywords;
+                           
+                        var forthCategories = thirdCategories[j].categories;
+                        //console.log(JSON.stringify(forthCategories));
+                        categoriesnd += JSON.stringify(thirdCategories[j]) + "\n";
+                        categoriesnd = categoriesnd.replace('"da"','"dk"');
+                        //delete thirdCategories[j].categories;
+                        }
+
+                    }
+    
+                }
+                const storage = new Storage();
+                const myBucket = storage.bucket('ideal_data_bucket');
+                const file = myBucket.file('centracategories/categories.njson');
+                categoriesnd
+                file.save(categoriesnd, {
+                    autoRetry: true, // <<-- required to enable retries for multipart.
+                    resumable: false, // means, use multipart upload instead of resumable upload.
+                    }, function(err) {
+                    if (!err) {
+                    // File written successfully.
+                    console.log("File was written!");
+                    }
+                });                  
+                resolve(res.statusCode);
+            });
+        });
+
+        req.on('error', (e) => {
+            reject(e.message);
+        });
+        // send the request
+        req.write('');
+        req.end();
+    });
+}
