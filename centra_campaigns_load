@@ -1,0 +1,83 @@
+const https = require('https');
+var status = "";
+let data = '';
+const {
+    Storage
+} = require('@google-cloud/storage');
+const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
+
+exports.centra_campaigns_load = async (req, res) => {
+    await callHttp();
+    let message = req.query.message || req.body.message || 'Centra processing done';
+    res.status(200).send(message);
+};
+
+async function callHttp() {
+    const client = new SecretManagerServiceClient();
+    const [version] = await client.accessSecretVersion({
+        name: 'projects/160110390064/secrets/centra_shop/versions/1',
+    });
+    return new Promise((resolve, reject) => {
+        const secret = version.payload.data.toString();
+        const statusCode = '';
+        const options = {
+            host: 'ideal.centra.com',
+            path: '/api/bigquery-shop/128/campaigns',
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'API-Authorization': ''+secret
+            }
+        };
+        const req = https.request(options, (res) => {
+            console.log('STATUS: ' + res.statusCode);
+            status = res.statusCode;
+            data = '';
+            res.on('data', function(chunk) {
+                data += chunk;
+            });
+            res.on('end', function() {
+                var promotions = JSON.parse(data);
+                console.log(promotions);
+                if (res.statusCode < 300) {
+                    var promotionsnd = "campaign,name,pricelist,product\n";
+                    for (var key in promotions) {
+                        var market = promotions[key].markets;
+                        var campaign = promotions[key].campaign;
+                        var name = promotions[key].name;
+                        var priselistarray = market[1].pricelists;
+                        for (var j in priselistarray) {
+                                pricelist = j;
+                            var productssale = priselistarray[j].productsOnSale;
+                            for (var k in productssale) {
+                            //  console.log(campaign+","+name+","+pricelist+","+productssale[k]);
+                                promotionsnd += campaign+","+name+","+pricelist+","+productssale[k] + "\n";
+                                }
+                            }
+                    
+                    }
+                    const storage = new Storage();
+                    const myBucket = storage.bucket('ideal_data_bucket');
+                    const file = myBucket.file('centrapromotions/promotions.csv');
+                    file.save(promotionsnd, {
+                        autoRetry: true, // <<-- required to enable retries for multipart.
+                        resumable: false, // means, use multipart upload instead of resumable upload.
+                        }, function(err) {
+                        if (!err) {
+                        // File written successfully.
+                        console.log("File was written!");
+                        }
+                    }); 
+                }   
+                 resolve(res.statusCode);
+            });
+        });
+
+        req.on('error', (e) => {
+            reject(e.message);
+        });
+        // send the request
+        req.write('');
+        req.end();
+    });
+}
