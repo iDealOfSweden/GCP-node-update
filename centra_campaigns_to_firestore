@@ -1,0 +1,48 @@
+const Firestore = require('@google-cloud/firestore');
+const PROJECTID = 'influencer-reporting-bi';
+const COLLECTION_NAME = 'campaigns';
+const firestore = new Firestore({
+  projectId: PROJECTID,
+  timestampsInSnapshots: true,
+});
+var collectionRef = firestore.collection(COLLECTION_NAME);
+var pricelists = ["23","24","34","35","36","37","38","39","40","41","42","44","45","79","80","81"]
+const {BigQuery} = require('@google-cloud/bigquery');
+const bigquery = new BigQuery({
+  projectId: 'ideal-data-warehouse',
+  timestampsInSnapshots: true,
+});
+
+exports.centra_campaigns_to_firestore = async (req, res) => {
+  var rows = await getRoot();
+  var data = {};
+
+    for (var p = 0; p < pricelists.length; p++) {
+      await collectionRef.doc(pricelists[p]).delete()
+      await collectionRef.doc(pricelists[p]).set({})
+    }
+    
+    for (var i = 0; i < rows.length; i++) {
+      if (typeof data[rows[i].pricelist] == 'undefined') {
+        data[rows[i].pricelist] = {};
+        data[rows[i].pricelist][rows[i].sku] = rows[i].name
+      } else {
+        data[rows[i].pricelist][rows[i].sku] = rows[i].name
+      }
+    }
+    for (var [key, value] of Object.entries(data)) {
+          await collectionRef.doc(key).set(value)
+        }
+  res.status(200).send("Campaigns loaded into Firestore");
+  }
+
+async function getRoot(){
+  var query = "SELECT t0.sku, t2.name, CAST(t2.pricelist AS STRING) AS pricelist FROM `ideal-data-warehouse.centra.products_root` t0 LEFT JOIN `ideal-data-warehouse.centra.products_displays_root` t1 ON t0.frontDisplay = t1.id LEFT JOIN `ideal-data-warehouse.centra.products_campaigns` t2 ON t2.product = t1.displayItemId WHERE pricelist IS NOT NULL AND t1.sku IS NOT NULL AND t2.name IS NOT NULL";
+  var options = {
+    query: query,
+    location: 'EU',
+  };
+  var [job] = await bigquery.createQueryJob(options);
+  var [rows] = await job.getQueryResults();
+  return rows;
+}
